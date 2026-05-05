@@ -1,0 +1,58 @@
+[build]
+  publish = "src"
+  functions = "netlify/functions"
+
+[dev]
+  framework = "#custom"
+  command = "echo 'Netlify Dev Mode'"
+  targetPort = 3000
+  port = 8888
+
+# Webhook de WhatsApp (GET para verificación, POST para mensajes)
+[[redirects]]
+  from = "/webhook"
+  to = "/.netlify/functions/whatsapp-webhook"
+  status = 200
+
+[[redirects]]
+  from = "/api/orders"
+  to = "/.netlify/functions/orders"
+  status = 200
+
+[[redirects]]
+  from = "/api/clients"
+  to = "/.netlify/functions/clients"
+  status = 200
+
+[[redirects]]
+  from = "/api/catalog"
+  to = "/.netlify/functions/catalog"
+  status = 200
+
+[[redirects]]
+  from = "/api/dashboard"
+  to = "/.netlify/functions/dashboard"
+  status = 200
+
+[[redirects]]
+  from = "/api/sync-sheets"
+  to = "/.netlify/functions/sync-sheets"
+  status = 200
+
+[[redirects]]
+  from = "/api/broadcast"
+  to = "/.netlify/functions/broadcast"
+  status = 200
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
+
+# Función programada: difusión diaria a las 8am (UTC-3 = 11:00 UTC)
+[functions."broadcast"]
+  schedule = "0 11 * * *"

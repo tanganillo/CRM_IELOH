@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IELOH — CRM</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header__inner">
+      <span class="header__logo">🧊 IELOH CRM</span>
+      <nav class="header__nav">
+        <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="nav-btn" data-tab="orders">Pedidos</button>
+        <button class="nav-btn" data-tab="clients">Clientes</button>
+        <button class="nav-btn" data-tab="catalog">Catálogo</button>
+      </nav>
+      <div class="header__actions">
+        <button id="btnSync" class="btn btn--outline btn--sm">⟳ Sync Sheets</button>
+        <button id="btnBroadcast" class="btn btn--primary btn--sm">📣 Difusión</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- ── DASHBOARD ── -->
+    <section id="tab-dashboard" class="tab active">
+      <h2 class="section-title">Resumen de hoy</h2>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <p class="stat-card__label">Pedidos hoy</p>
+          <p class="stat-card__value" id="statCount">—</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-card__label">Total facturado</p>
+          <p class="stat-card__value" id="statTotal">—</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-card__label">Total clientes</p>
+          <p class="stat-card__value" id="statClients">—</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-card__label">Pendientes</p>
+          <p class="stat-card__value" id="statPending">—</p>
+        </div>
+      </div>
+
+      <h3 class="section-subtitle">Últimos pedidos</h3>
+      <div class="table-wrap">
+        <table class="table" id="recentTable">
+          <thead>
+            <tr>
+              <th>#</th><th>Cliente</th><th>Teléfono</th><th>Items</th>
+              <th>Total</th><th>Estado</th><th>Fecha</th><th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="recentBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── PEDIDOS ── -->
+    <section id="tab-orders" class="tab">
+      <div class="toolbar">
+        <h2 class="section-title">Pedidos</h2>
+        <div class="toolbar__right">
+          <select id="filterEstado" class="input input--sm">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="confirmado">Confirmado</option>
+            <option value="en_camino">En camino</option>
+            <option value="entregado">Entregado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>#</th><th>Cliente</th><th>Teléfono</th><th>Items</th>
+              <th>Total</th><th>Estado</th><th>Fecha</th><th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="ordersBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── CLIENTES ── -->
+    <section id="tab-clients" class="tab">
+      <h2 class="section-title">Clientes</h2>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Registrado</th></tr>
+          </thead>
+          <tbody id="clientsBody"><tr><td colspan="5" class="loading">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── CATÁLOGO ── -->
+    <section id="tab-catalog" class="tab">
+      <div class="toolbar">
+        <h2 class="section-title">Catálogo</h2>
+        <button id="btnAddProduct" class="btn btn--primary btn--sm">+ Agregar producto</button>
+      </div>
+      <div class="catalog-grid" id="catalogGrid">
+        <p class="loading">Cargando…</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal de estado de pedido -->
+  <div id="statusModal" class="modal hidden">
+    <div class="modal__box">
+      <h3>Cambiar estado del pedido <span id="modalOrderId"></span></h3>
+      <select id="modalStatus" class="input">
+        <option value="pendiente">Pendiente</option>
+        <option value="confirmado">Confirmado</option>
+        <option value="en_camino">En camino</option>
+        <option value="entregado">Entregado</option>
+        <option value="cancelado">Cancelado</option>
+      </select>
+      <div class="modal__actions">
+        <button id="btnStatusCancel" class="btn btn--outline">Cancelar</button>
+        <button id="btnStatusSave" class="btn btn--primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal agregar producto -->
+  <div id="productModal" class="modal hidden">
+    <div class="modal__box">
+      <h3>Nuevo producto</h3>
+      <label>Nombre <input id="pNombre" class="input" type="text" /></label>
+      <label>Descripción <input id="pDesc" class="input" type="text" /></label>
+      <label>Precio <input id="pPrecio" class="input" type="number" /></label>
+      <div class="modal__actions">
+        <button id="btnProdCancel" class="btn btn--outline">Cancelar</button>
+        <button id="btnProdSave" class="btn btn--primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
