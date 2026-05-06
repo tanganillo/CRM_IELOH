@@ -6,7 +6,7 @@ exports.handler = async (event) => {
 
   try {
     if (method === "GET") {
-      const limit  = Number(params.limit)  || 50;
+      const limit  = Number(params.limit)  || 100;
       const offset = Number(params.offset) || 0;
       const { data, error } = await supabase
         .from("clientes")

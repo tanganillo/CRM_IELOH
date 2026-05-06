@@ -325,7 +325,7 @@ document.querySelectorAll(".nav-btn").forEach(btn => {
 
 /* ── Clients ─────────────────────────────────────────────────────────────── */
 let _clientsPage = 0;
-const CLIENTS_PER_PAGE = 50;
+const CLIENTS_PER_PAGE = 100;
 
 async function loadClients(page) {
   if (page !== undefined) _clientsPage = page;
