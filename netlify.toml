@@ -44,7 +44,32 @@
   to = "/.netlify/functions/broadcast"
   status = 200
 
-# SPA fallback
+[[redirects]]
+  from = "/api/config"
+  to = "/.netlify/functions/config"
+  status = 200
+
+[[redirects]]
+  from = "/api/repartidores"
+  to = "/.netlify/functions/repartidores"
+  status = 200
+
+[[redirects]]
+  from = "/api/location-update"
+  to = "/.netlify/functions/location-update"
+  status = 200
+
+[[redirects]]
+  from = "/api/nearby-delivery"
+  to = "/.netlify/functions/nearby-delivery"
+  status = 200
+
+[[redirects]]
+  from = "/api/archive-orders"
+  to = "/.netlify/functions/archive-orders"
+  status = 200
+
+# SPA fallback (debe ir al final)
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -53,6 +78,10 @@
 [functions]
   node_bundler = "esbuild"
 
-# Función programada: difusión diaria a las 8am (UTC-3 = 11:00 UTC)
+# Difusión diaria 8am ART (11:00 UTC)
 [functions."broadcast"]
   schedule = "0 11 * * *"
+
+# Archivado automático: 1ro de cada mes a las 7am ART (10:00 UTC)
+[functions."archive-orders"]
+  schedule = "0 10 1 * *"

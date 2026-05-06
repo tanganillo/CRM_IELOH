@@ -47,7 +47,7 @@ exports.handler = async (event) => {
     await handleMessage(from, name, userMessage);
   } catch (err) {
     console.error("Error manejando mensaje:", err);
-    await sendText(from, "Hubo un problema procesando tu mensaje. Por favor intentá de nuevo.");
+    await sendText(from, "Algo salió mal. Intentá de nuevo en un momento.");
   }
 
   // WhatsApp requiere 200 rápido para no reintentar
@@ -63,7 +63,7 @@ async function handleMessage(from, name, userMessage) {
     client = await upsertClient({ telefono: from, nombre: name });
     await sendText(
       from,
-      `¡Hola ${name}! 👋 Bienvenido a *IELOH*, tu fábrica de hielo de confianza.\n\nEscribí *catálogo* para ver nuestros productos o *pedido* para hacer un pedido.`
+      `¡Hola ${name}! Soy el bot de *ieloh* 🧊\n\nEscribí *catálogo* para ver los productos o *pedido* para hacer uno.`
     );
     return;
   }
@@ -118,7 +118,7 @@ async function handleMessage(from, name, userMessage) {
     case "confirmacion_pedido": {
       const pending = session.pendingOrder || aiResponse.order;
       if (!pending?.items?.length) {
-        await sendText(from, "No encontré un pedido pendiente. ¿Querés empezar uno nuevo?");
+        await sendText(from, "No hay pedido pendiente. ¿Querés hacer uno nuevo?");
         break;
       }
       const order = await createOrder({
@@ -129,7 +129,7 @@ async function handleMessage(from, name, userMessage) {
       delete sessions[from];
       await sendText(
         from,
-        `✅ *Pedido #${order.id} confirmado*\n\n${formatOrderSummary(pending)}\n\nTotal: $${order.total}\n\nTe avisamos cuando salga para entrega. ¡Gracias! 🧊`
+        `✅ *Pedido #${order.id} confirmado*\n\n${formatOrderSummary(pending)}\n\nTotal: $${order.total}\n\nTe avisamos cuando salga. ¡Gracias por elegirnos!`
       );
       break;
     }
@@ -146,47 +146,47 @@ async function handleMessage(from, name, userMessage) {
 async function sendMainMenu(to, name) {
   await sendInteractiveButtons(
     to,
-    `¡Hola ${name}! ¿En qué te puedo ayudar?`,
-    ["📋 Ver catálogo", "📦 Mis pedidos", "🛒 Hacer pedido"]
+    `¡Hola ${name}! ¿Qué necesitás?`,
+    ["📋 Catálogo", "📦 Mis pedidos", "🛒 Hacer pedido"]
   );
 }
 
 async function sendCatalog(to, catalog) {
   if (!catalog.length) {
-    await sendText(to, "Por el momento no hay productos disponibles. Consultanos más tarde.");
+    await sendText(to, "Por ahora no hay productos disponibles. Volvé a consultar más tarde.");
     return;
   }
   const sections = [
     {
-      title: "Productos disponibles",
+      title: "Productos",
       rows: catalog.map((p) => ({
         id: `cat_${p.id}`,
         title: p.nombre,
-        description: `$${p.precio} - ${p.descripcion}`,
+        description: `$${p.precio} · ${p.descripcion}`,
       })),
     },
   ];
-  await sendInteractiveList(to, "Seleccioná un producto para pedirlo:", "Ver productos", sections);
+  await sendInteractiveList(to, "Estos son los productos de *ieloh* 🧊", "Ver productos", sections);
 }
 
 async function sendOrderStatus(to, orders) {
   if (!orders.length) {
-    await sendText(to, "No tenés pedidos registrados aún. Escribí *catálogo* para ver nuestros productos.");
+    await sendText(to, "Todavía no tenés pedidos. Escribí *catálogo* para ver los productos.");
     return;
   }
   const STATUS_EMOJI = {
-    pendiente: "🕐",
+    pendiente:  "🕐",
     confirmado: "✅",
-    en_camino: "🚚",
-    entregado: "📦",
-    cancelado: "❌",
+    en_camino:  "🚚",
+    entregado:  "📦",
+    cancelado:  "❌",
   };
   const lines = orders.slice(0, 5).map((o) => {
     const emoji = STATUS_EMOJI[o.estado] || "•";
     const fecha = new Date(o.created_at).toLocaleDateString("es-AR");
-    return `${emoji} *Pedido #${o.id}* — ${o.estado.replace("_", " ")} — $${o.total} — ${fecha}`;
+    return `${emoji} *#${o.id}* · ${o.estado.replace("_", " ")} · $${o.total} · ${fecha}`;
   });
-  await sendText(to, `*Tus últimos pedidos:*\n\n${lines.join("\n")}`);
+  await sendText(to, `*Tus últimos pedidos*\n\n${lines.join("\n")}`);
 }
 
 function formatOrderSummary(order) {

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#FF663B" />
+  <title>ieloh — Repartidor</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    :root {
+      --orange: #FF663B;
+      --bg:     #0A0A0A;
+      --card:   #141414;
+      --border: #2A2A2A;
+      --text:   #F0F0F0;
+      --muted:  #888888;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      margin: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    .rep-header {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .rep-header-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .rep-header-logo-circle {
+      width: 32px; height: 32px;
+      background: var(--orange);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rep-header-logo-circle span {
+      color: #fff; font-size: 10px; font-weight: 700; letter-spacing: -.02em;
+    }
+    .rep-header-title { font-weight: 600; font-size: 14px; }
+    .gps-badge {
+      font-size: 11px; padding: 3px 9px; border-radius: 12px;
+      font-weight: 600;
+      background: var(--card); border: 1px solid var(--border);
+    }
+    .gps-badge--on  { color: #22c55e; border-color: #22c55e; }
+    .gps-badge--off { color: var(--muted); }
+
+    /* Setup */
+    .rep-setup {
+      max-width: 380px;
+      margin: 60px auto 0;
+      padding: 32px 28px;
+      background: var(--card);
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .rep-setup h2 { margin: 0 0 6px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+
+    /* Main */
+    .rep-main { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .rep-info {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .rep-info-name { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+    .rep-info-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* Tarjetas de pedido */
+    .order-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      transition: border-color .15s;
+    }
+    .order-card:hover { border-color: var(--orange); }
+    .order-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .order-card-id { font-weight: 700; font-size: 15px; }
+    .order-card-client { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+    .order-card-addr   { font-size: 13px; margin-bottom: 8px; }
+    .order-card-addr a { color: var(--orange); text-decoration: none; }
+    .order-card-items  { font-size: 13px; color: #ccc; margin-bottom: 10px; }
+    .order-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .btn-rep {
+      flex: 1; padding: 9px; border: none; border-radius: 6px; cursor: pointer;
+      font-size: 13px; font-weight: 600; min-width: 100px;
+      font-family: 'Inter', sans-serif;
+    }
+    .btn-rep--camino    { background: #f59e0b; color: #000; }
+    .btn-rep--entregado { background: #22c55e; color: #000; }
+    .btn-rep--maps      { background: var(--orange); color: #fff; }
+
+    /* Badges */
+    .badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 9999px; font-size: 11px;
+      font-weight: 600; text-transform: capitalize;
+    }
+    .badge--pendiente  { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .badge--confirmado { background: rgba(255,102,59,.15);  color: var(--orange); }
+    .badge--en_camino  { background: rgba(168,85,247,.15);  color: #c084fc; }
+    .badge--entregado  { background: rgba(34,197,94,.15);   color: #22c55e; }
+    .badge--cancelado  { background: rgba(239,68,68,.15);   color: #ef4444; }
+
+    /* Inputs */
+    .input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 9px 12px; border-radius: 6px;
+      font-size: 14px; font-family: 'Inter', sans-serif;
+      outline: none; transition: border-color .15s;
+      display: block; margin-top: 6px; margin-bottom: 14px;
+    }
+    .input:focus { border-color: var(--orange); }
+
+    .btn { /* reutiliza el estilo del dashboard */
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border: none; border-radius: 6px;
+      font-size: 13px; font-weight: 600;
+      font-family: 'Inter', sans-serif; cursor: pointer;
+      transition: opacity .12s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn--primary { background: var(--orange); color: #fff; }
+    .btn--outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn--sm { padding: 5px 10px; font-size: 12px; }
+
+    .empty-state { text-align: center; color: var(--muted); padding: 60px 20px; }
+    .empty-state p { font-size: 15px; }
+
+    #toast-rep {
+      position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--orange);
+      color: var(--text); padding: 10px 20px; border-radius: 8px;
+      font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none;
+      white-space: nowrap;
+    }
+    #toast-rep.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- Pantalla de configuración (primera vez) -->
+  <div id="setupScreen" class="rep-setup">
+    <div style="width:60px;height:60px;background:#FF663B;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">
+      <span style="color:#fff;font-size:16px;font-weight:700;letter-spacing:-.03em;font-family:Inter,system-ui,sans-serif">ieloh</span>
+    </div>
+    <h2>Repartidor</h2>
+    <p style="text-align:center;color:#888;margin:8px 0 24px">
+      Ingresá tu número de repartidor para comenzar
+    </p>
+    <label style="display:block;margin-bottom:8px">
+      Número de repartidor (1–4)
+      <input id="repIdInput" class="input" type="number" min="1" max="4" placeholder="Ej: 1" style="margin-top:6px" />
+    </label>
+    <button id="btnSetupConfirm" class="btn btn--primary" style="width:100%;margin-top:16px">
+      Entrar
+    </button>
+  </div>
+
+  <!-- App principal (después de identificarse) -->
+  <div id="appScreen" style="display:none">
+    <header class="rep-header">
+      <h1>🧊 IELOH</h1>
+      <span id="gpsBadge" class="gps-badge gps-badge--off">GPS off</span>
+    </header>
+
+    <div class="rep-main">
+      <div class="rep-info" id="repInfo">
+        <div>
+          <div class="rep-info-name" id="repName">Cargando…</div>
+          <div class="rep-info-sub" id="repSub"></div>
+        </div>
+        <button id="btnLogout" class="btn btn--outline btn--sm" style="margin-left:auto">
+          Salir
+        </button>
+      </div>
+
+      <div id="ordersList">
+        <p class="empty-state"><p>Cargando pedidos…</p></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-rep"></div>
+
+  <script src="js/repartidor.js"></script>
+</body>
+</html>

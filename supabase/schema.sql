@@ -46,10 +46,45 @@ INSERT INTO catalogo (nombre, descripcion, precio) VALUES
   ('Bloque de hielo 10kg', 'Bloque entero 10 kg para events',   1800)
 ON CONFLICT DO NOTHING;
 
+-- ── Tabla: repartidores ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS repartidores (
+  id                   BIGSERIAL PRIMARY KEY,
+  nombre               TEXT NOT NULL,
+  telefono             TEXT UNIQUE NOT NULL,
+  camioneta            TEXT NOT NULL CHECK (camioneta IN ('camioneta_1', 'camioneta_2')),
+  turno                TEXT NOT NULL DEFAULT 'manana' CHECK (turno IN ('manana', 'tarde')),
+  latitud              DOUBLE PRECISION,
+  longitud             DOUBLE PRECISION,
+  disponible           BOOLEAN NOT NULL DEFAULT TRUE,
+  pedidos_del_dia      INTEGER NOT NULL DEFAULT 0,
+  ultima_actualizacion TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO repartidores (nombre, telefono, camioneta, turno) VALUES
+  ('Repartidor 1', '5491100000001', 'camioneta_1', 'manana'),
+  ('Repartidor 2', '5491100000002', 'camioneta_1', 'tarde'),
+  ('Repartidor 3', '5491100000003', 'camioneta_2', 'manana'),
+  ('Repartidor 4', '5491100000004', 'camioneta_2', 'tarde')
+ON CONFLICT DO NOTHING;
+
+-- Campo para marcar pedidos archivados (>90 días)
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_pedidos_archived ON pedidos(archived);
+
 -- ── Row Level Security (RLS) — usar con service_role en funciones serverless ──
-ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE catalogo  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pedidos   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clientes      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalogo      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pedidos       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE repartidores  ENABLE ROW LEVEL SECURITY;
 
 -- La SUPABASE_SECRET_KEY (service role) bypassea RLS automáticamente.
 -- Para el dashboard público añadirías políticas específicas aquí.
+
+-- ── Migración 002: columnas legacy para importación de clientes ───────────────
+ALTER TABLE clientes
+  ADD COLUMN IF NOT EXISTS codigo_legacy  INTEGER UNIQUE,
+  ADD COLUMN IF NOT EXISTS zona           TEXT,
+  ADD COLUMN IF NOT EXISTS saldo_inicial  NUMERIC(10,2) DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_clientes_codigo_legacy ON clientes(codigo_legacy);

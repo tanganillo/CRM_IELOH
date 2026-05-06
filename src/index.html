@@ -5,148 +5,210 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IELOH — CRM</title>
   <link rel="stylesheet" href="css/styles.css" />
+  <!-- Leaflet CSS para el mapa -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
-  <header class="header">
-    <div class="header__inner">
-      <span class="header__logo">🧊 IELOH CRM</span>
-      <nav class="header__nav">
-        <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
-        <button class="nav-btn" data-tab="orders">Pedidos</button>
-        <button class="nav-btn" data-tab="clients">Clientes</button>
-        <button class="nav-btn" data-tab="catalog">Catálogo</button>
-      </nav>
-      <div class="header__actions">
-        <button id="btnSync" class="btn btn--outline btn--sm">⟳ Sync Sheets</button>
-        <button id="btnBroadcast" class="btn btn--primary btn--sm">📣 Difusión</button>
-      </div>
-    </div>
-  </header>
 
-  <main class="main">
-    <!-- ── DASHBOARD ── -->
-    <section id="tab-dashboard" class="tab active">
-      <h2 class="section-title">Resumen de hoy</h2>
-      <div class="stats-grid">
-        <div class="stat-card">
-          <p class="stat-card__label">Pedidos hoy</p>
-          <p class="stat-card__value" id="statCount">—</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-card__label">Total facturado</p>
-          <p class="stat-card__value" id="statTotal">—</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-card__label">Total clientes</p>
-          <p class="stat-card__value" id="statClients">—</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-card__label">Pendientes</p>
-          <p class="stat-card__value" id="statPending">—</p>
-        </div>
+  <!-- ── PANTALLA DE LOGIN ─────────────────────────────────────────────────── -->
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <span class="auth-logo-text">ieloh</span>
       </div>
-
-      <h3 class="section-subtitle">Últimos pedidos</h3>
-      <div class="table-wrap">
-        <table class="table" id="recentTable">
-          <thead>
-            <tr>
-              <th>#</th><th>Cliente</th><th>Teléfono</th><th>Items</th>
-              <th>Total</th><th>Estado</th><th>Fecha</th><th>Acción</th>
-            </tr>
-          </thead>
-          <tbody id="recentBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ── PEDIDOS ── -->
-    <section id="tab-orders" class="tab">
-      <div class="toolbar">
-        <h2 class="section-title">Pedidos</h2>
-        <div class="toolbar__right">
-          <select id="filterEstado" class="input input--sm">
-            <option value="">Todos los estados</option>
-            <option value="pendiente">Pendiente</option>
-            <option value="confirmado">Confirmado</option>
-            <option value="en_camino">En camino</option>
-            <option value="entregado">Entregado</option>
-            <option value="cancelado">Cancelado</option>
-          </select>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>#</th><th>Cliente</th><th>Teléfono</th><th>Items</th>
-              <th>Total</th><th>Estado</th><th>Fecha</th><th>Acción</th>
-            </tr>
-          </thead>
-          <tbody id="ordersBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ── CLIENTES ── -->
-    <section id="tab-clients" class="tab">
-      <h2 class="section-title">Clientes</h2>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Registrado</th></tr>
-          </thead>
-          <tbody id="clientsBody"><tr><td colspan="5" class="loading">Cargando…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- ── CATÁLOGO ── -->
-    <section id="tab-catalog" class="tab">
-      <div class="toolbar">
-        <h2 class="section-title">Catálogo</h2>
-        <button id="btnAddProduct" class="btn btn--primary btn--sm">+ Agregar producto</button>
-      </div>
-      <div class="catalog-grid" id="catalogGrid">
-        <p class="loading">Cargando…</p>
-      </div>
-    </section>
-  </main>
-
-  <!-- Modal de estado de pedido -->
-  <div id="statusModal" class="modal hidden">
-    <div class="modal__box">
-      <h3>Cambiar estado del pedido <span id="modalOrderId"></span></h3>
-      <select id="modalStatus" class="input">
-        <option value="pendiente">Pendiente</option>
-        <option value="confirmado">Confirmado</option>
-        <option value="en_camino">En camino</option>
-        <option value="entregado">Entregado</option>
-        <option value="cancelado">Cancelado</option>
-      </select>
-      <div class="modal__actions">
-        <button id="btnStatusCancel" class="btn btn--outline">Cancelar</button>
-        <button id="btnStatusSave" class="btn btn--primary">Guardar</button>
-      </div>
+      <h1 class="auth-title">ieloh CRM</h1>
+      <p class="auth-subtitle">Acceso solo para administradores</p>
+      <button id="btnGoogleLogin" class="btn btn--google">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17.64 9.20455C17.64 8.56636 17.5827 7.95273 17.4764 7.36364H9V10.845H13.8436C13.635 11.97 13.0009 12.9232 12.0477 13.5614V15.8196H14.9564C16.6582 14.2527 17.64 11.9455 17.64 9.20455Z" fill="#4285F4"/><path d="M9 18C11.43 18 13.4673 17.1941 14.9564 15.8196L12.0477 13.5614C11.2418 14.1014 10.2109 14.4205 9 14.4205C6.65591 14.4205 4.67182 12.8373 3.96409 10.71H0.957275V13.0418C2.43818 15.9832 5.48182 18 9 18Z" fill="#34A853"/><path d="M3.96409 10.71C3.78409 10.17 3.68182 9.59318 3.68182 9C3.68182 8.40682 3.78409 7.83 3.96409 7.29V4.95818H0.957275C0.347727 6.17318 0 7.54773 0 9C0 10.4523 0.347727 11.8268 0.957275 13.0418L3.96409 10.71Z" fill="#FBBC05"/><path d="M9 3.57955C10.3214 3.57955 11.5077 4.03364 12.4405 4.92545L15.0218 2.34409C13.4632 0.891818 11.4259 0 9 0C5.48182 0 2.43818 2.01682 0.957275 4.95818L3.96409 7.29C4.67182 5.16273 6.65591 3.57955 9 3.57955Z" fill="#EA4335"/></svg>
+        Ingresar con Google
+      </button>
+      <div id="authError" class="auth-error hidden"></div>
     </div>
   </div>
 
-  <!-- Modal agregar producto -->
-  <div id="productModal" class="modal hidden">
-    <div class="modal__box">
-      <h3>Nuevo producto</h3>
-      <label>Nombre <input id="pNombre" class="input" type="text" /></label>
-      <label>Descripción <input id="pDesc" class="input" type="text" /></label>
-      <label>Precio <input id="pPrecio" class="input" type="number" /></label>
-      <div class="modal__actions">
-        <button id="btnProdCancel" class="btn btn--outline">Cancelar</button>
-        <button id="btnProdSave" class="btn btn--primary">Guardar</button>
+  <!-- ── DASHBOARD (visible solo autenticado) ─────────────────────────────── -->
+  <div id="dashboardApp" style="display:none">
+
+    <header class="header">
+      <div class="header__inner">
+        <span class="header__logo">
+          <svg width="72" height="22" viewBox="0 0 360 110" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="ieloh">
+            <text x="0" y="95" font-family="Inter, system-ui, sans-serif" font-size="110" font-weight="700" fill="#FF663B" letter-spacing="-4">ieloh</text>
+          </svg>
+          <span class="logo-badge">CRM</span>
+        </span>
+        <nav class="header__nav">
+          <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+          <button class="nav-btn" data-tab="map">Mapa</button>
+          <button class="nav-btn" data-tab="orders">Pedidos</button>
+          <button class="nav-btn" data-tab="drivers">Repartidores</button>
+          <button class="nav-btn" data-tab="clients">Clientes</button>
+          <button class="nav-btn" data-tab="catalog">Catálogo</button>
+        </nav>
+        <div class="header__actions">
+          <span id="userEmail" class="user-email"></span>
+          <button id="btnSync" class="btn btn--outline btn--sm">⟳ Sheets</button>
+          <button id="btnBroadcast" class="btn btn--primary btn--sm">📣 Difusión</button>
+          <button id="btnLogout" class="btn btn--outline btn--sm">Salir</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+
+      <!-- ── DASHBOARD ── -->
+      <section id="tab-dashboard" class="tab active">
+        <h2 class="section-title">Resumen de hoy</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <p class="stat-card__label">Pedidos hoy</p>
+            <p class="stat-card__value" id="statCount">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-card__label">Total facturado</p>
+            <p class="stat-card__value" id="statTotal">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-card__label">Total clientes</p>
+            <p class="stat-card__value" id="statClients">—</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-card__label">Pendientes</p>
+            <p class="stat-card__value" id="statPending">—</p>
+          </div>
+        </div>
+
+        <h3 class="section-subtitle">Últimos pedidos</h3>
+        <div class="table-wrap">
+          <table class="table" id="recentTable">
+            <thead>
+              <tr>
+                <th>#</th><th>Cliente</th><th>Teléfono</th><th>Items</th>
+                <th>Total</th><th>Estado</th><th>Fecha</th><th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="recentBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── MAPA ── -->
+      <section id="tab-map" class="tab">
+        <div class="toolbar">
+          <h2 class="section-title">Mapa en tiempo real</h2>
+          <button id="btnRefreshMap" class="btn btn--outline btn--sm">⟳ Actualizar</button>
+        </div>
+        <div id="map"></div>
+        <div id="mapDriverList" class="driver-list"></div>
+      </section>
+
+      <!-- ── PEDIDOS ── -->
+      <section id="tab-orders" class="tab">
+        <div class="toolbar">
+          <h2 class="section-title">Pedidos</h2>
+          <div class="toolbar__right">
+            <select id="filterEstado" class="input input--sm">
+              <option value="">Todos los estados</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="confirmado">Confirmado</option>
+              <option value="en_camino">En camino</option>
+              <option value="entregado">Entregado</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>#</th><th>Cliente</th><th>Teléfono</th><th>Items</th>
+                <th>Total</th><th>Estado</th><th>Fecha</th><th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody"><tr><td colspan="8" class="loading">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── REPARTIDORES ── -->
+      <section id="tab-drivers" class="tab">
+        <div class="toolbar">
+          <h2 class="section-title">Repartidores</h2>
+          <a href="/repartidor.html" target="_blank" class="btn btn--outline btn--sm">
+            Abrir App Repartidor
+          </a>
+        </div>
+        <div class="drivers-grid" id="driversGrid">
+          <p class="loading">Cargando…</p>
+        </div>
+      </section>
+
+      <!-- ── CLIENTES ── -->
+      <section id="tab-clients" class="tab">
+        <h2 class="section-title">Clientes</h2>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Registrado</th></tr>
+            </thead>
+            <tbody id="clientsBody"><tr><td colspan="5" class="loading">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ── CATÁLOGO ── -->
+      <section id="tab-catalog" class="tab">
+        <div class="toolbar">
+          <h2 class="section-title">Catálogo</h2>
+          <button id="btnAddProduct" class="btn btn--primary btn--sm">+ Agregar producto</button>
+        </div>
+        <div class="catalog-grid" id="catalogGrid">
+          <p class="loading">Cargando…</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Modal estado de pedido -->
+    <div id="statusModal" class="modal hidden">
+      <div class="modal__box">
+        <h3>Cambiar estado del pedido <span id="modalOrderId"></span></h3>
+        <select id="modalStatus" class="input">
+          <option value="pendiente">Pendiente</option>
+          <option value="confirmado">Confirmado</option>
+          <option value="en_camino">En camino</option>
+          <option value="entregado">Entregado</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+        <div class="modal__actions">
+          <button id="btnStatusCancel" class="btn btn--outline">Cancelar</button>
+          <button id="btnStatusSave" class="btn btn--primary">Guardar</button>
+        </div>
       </div>
     </div>
-  </div>
+
+    <!-- Modal agregar producto -->
+    <div id="productModal" class="modal hidden">
+      <div class="modal__box">
+        <h3>Nuevo producto</h3>
+        <label>Nombre <input id="pNombre" class="input" type="text" /></label>
+        <label>Descripción <input id="pDesc" class="input" type="text" /></label>
+        <label>Precio <input id="pPrecio" class="input" type="number" /></label>
+        <div class="modal__actions">
+          <button id="btnProdCancel" class="btn btn--outline">Cancelar</button>
+          <button id="btnProdSave" class="btn btn--primary">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /dashboardApp -->
 
   <div id="toast" class="toast hidden"></div>
 
+  <!-- Supabase JS para auth -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- Leaflet JS para el mapa -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
