@@ -430,6 +430,20 @@ body {
 }
 .driver-card__actions { display: flex; gap: 8px; }
 
+/* ── Pagination ──────────────────────────────────────────────────────────── */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 4px;
+}
+.pagination__info {
+  font-size: 13px;
+  color: var(--c-muted);
+  min-width: 72px;
+  text-align: center;
+}
+
 /* ── GPS dot ─────────────────────────────────────────────────────────────── */
 .gps-dot {
   width: 8px; height: 8px;

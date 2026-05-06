@@ -6,11 +6,13 @@ exports.handler = async (event) => {
 
   try {
     if (method === "GET") {
+      const limit  = Number(params.limit)  || 50;
+      const offset = Number(params.offset) || 0;
       const { data, error } = await supabase
         .from("clientes")
         .select("*")
         .order("created_at", { ascending: false })
-        .range(0, (Number(params.limit) || 100) - 1);
+        .range(offset, offset + limit - 1);
       if (error) throw error;
       return ok(data);
     }

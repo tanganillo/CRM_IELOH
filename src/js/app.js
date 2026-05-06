@@ -324,11 +324,18 @@ document.querySelectorAll(".nav-btn").forEach(btn => {
 });
 
 /* ── Clients ─────────────────────────────────────────────────────────────── */
-async function loadClients() {
-  const clients = await API.get("/api/clients");
-  const tbody   = document.getElementById("clientsBody");
-  if (!clients?.length) {
+let _clientsPage = 0;
+const CLIENTS_PER_PAGE = 50;
+
+async function loadClients(page) {
+  if (page !== undefined) _clientsPage = page;
+  const offset  = _clientsPage * CLIENTS_PER_PAGE;
+  const clients = await API.get(`/api/clients?limit=${CLIENTS_PER_PAGE}&offset=${offset}`);
+
+  const tbody = document.getElementById("clientsBody");
+  if (!clients?.length && _clientsPage === 0) {
     tbody.innerHTML = `<tr><td colspan="5" class="loading">Sin clientes</td></tr>`;
+    renderClientsPagination(false);
     return;
   }
   tbody.innerHTML = clients.map(c => `
@@ -339,7 +346,18 @@ async function loadClients() {
       <td>${c.direccion || "—"}</td>
       <td>${new Date(c.created_at).toLocaleDateString("es-AR")}</td>
     </tr>`).join("");
+
+  renderClientsPagination(clients.length === CLIENTS_PER_PAGE);
 }
+
+function renderClientsPagination(hasMore) {
+  document.getElementById("btnClientsPrev").disabled = _clientsPage === 0;
+  document.getElementById("btnClientsNext").disabled = !hasMore;
+  document.getElementById("clientsPageInfo").textContent = `Página ${_clientsPage + 1}`;
+}
+
+document.getElementById("btnClientsPrev").addEventListener("click", () => loadClients(_clientsPage - 1));
+document.getElementById("btnClientsNext").addEventListener("click", () => loadClients(_clientsPage + 1));
 
 /* ── Catalog ─────────────────────────────────────────────────────────────── */
 async function loadCatalog() {
