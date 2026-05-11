@@ -268,11 +268,22 @@ let _mapRefresh    = null;
 
 const TRUCK_ICON = (color) => L.divIcon({
   className: "",
-  html: `<div style="background:${color};border-radius:50%;width:36px;height:36px;
-    display:flex;align-items:center;justify-content:center;font-size:20px;
-    border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)">🚐</div>`,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
+  html: `<svg xmlns='http://www.w3.org/2000/svg' width='48' height='32' viewBox='0 0 48 32' style='filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))'>
+    <rect x='2' y='5' width='30' height='15' rx='2' fill='${color}'/>
+    <path d='M32 5 L32 20 L46 20 L46 14 L40 5 Z' fill='${color}'/>
+    <path d='M33 6.5 L39 6.5 L45 13 L45 19 L33 19 Z' fill='rgba(200,230,255,0.38)'/>
+    <rect x='4' y='7' width='9' height='7' rx='1' fill='rgba(255,255,255,0.32)'/>
+    <rect x='15' y='7' width='9' height='7' rx='1' fill='rgba(255,255,255,0.32)'/>
+    <line x1='14' y1='6' x2='14' y2='20' stroke='rgba(0,0,0,0.15)' stroke-width='0.7'/>
+    <rect x='2' y='13' width='2' height='4' rx='0.5' fill='#ef4444'/>
+    <rect x='44' y='14' width='2' height='4' rx='0.5' fill='#fef9c3'/>
+    <circle cx='10' cy='25' r='5.5' fill='#1a1a1a'/>
+    <circle cx='10' cy='25' r='2.2' fill='#888'/>
+    <circle cx='36' cy='25' r='5.5' fill='#1a1a1a'/>
+    <circle cx='36' cy='25' r='2.2' fill='#888'/>
+  </svg>`,
+  iconSize: [48, 32],
+  iconAnchor: [24, 30],
 });
 
 async function loadMap() {
@@ -299,7 +310,7 @@ async function refreshMapDrivers() {
   _driverMarkers = [];
 
   const COLORS = {
-    camioneta_1: "#3b82f6",
+    camioneta_1: "#FF663B",
     camioneta_2: "#f59e0b",
   };
 
