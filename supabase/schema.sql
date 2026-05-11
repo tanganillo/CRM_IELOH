@@ -57,16 +57,12 @@ CREATE TABLE IF NOT EXISTS repartidores (
   longitud             DOUBLE PRECISION,
   disponible           BOOLEAN NOT NULL DEFAULT TRUE,
   pedidos_del_dia      INTEGER NOT NULL DEFAULT 0,
+  zona                 TEXT,
   ultima_actualizacion TIMESTAMPTZ,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO repartidores (nombre, telefono, camioneta, turno) VALUES
-  ('Repartidor 1', '5491100000001', 'camioneta_1', 'manana'),
-  ('Repartidor 2', '5491100000002', 'camioneta_1', 'tarde'),
-  ('Repartidor 3', '5491100000003', 'camioneta_2', 'manana'),
-  ('Repartidor 4', '5491100000004', 'camioneta_2', 'tarde')
-ON CONFLICT DO NOTHING;
+-- (repartidores se cargan desde el dashboard, no hay seed de prueba)
 
 -- Campo para marcar pedidos archivados (>90 días)
 ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;

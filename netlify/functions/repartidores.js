@@ -1,10 +1,19 @@
-const { getRepartidores, updateRepartidor } = require("../../lib/supabase");
+const { getRepartidores, createRepartidor, updateRepartidor } = require("../../lib/supabase");
 
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === "GET") {
       const data = await getRepartidores();
       return { statusCode: 200, body: JSON.stringify(data) };
+    }
+
+    if (event.httpMethod === "POST") {
+      const { nombre, telefono, camioneta, turno, zona } = JSON.parse(event.body);
+      if (!nombre || !telefono || !camioneta || !turno) {
+        return { statusCode: 400, body: JSON.stringify({ error: "nombre, telefono, camioneta y turno son requeridos" }) };
+      }
+      const data = await createRepartidor({ nombre, telefono, camioneta, turno, zona });
+      return { statusCode: 201, body: JSON.stringify(data) };
     }
 
     if (event.httpMethod === "PATCH") {

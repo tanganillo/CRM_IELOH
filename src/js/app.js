@@ -226,6 +226,41 @@ async function toggleDriver(id, current) {
 
 window.toggleDriver = toggleDriver;
 
+/* ── Agregar repartidor modal ────────────────────────────────────────────── */
+document.getElementById("btnAddDriver").addEventListener("click", () => {
+  ["dNombre", "dTelefono"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("dCamioneta").value = "camioneta_1";
+  document.getElementById("dTurno").value     = "manana";
+  document.getElementById("dZona").value      = "";
+  document.getElementById("driverModal").classList.remove("hidden");
+});
+
+document.getElementById("btnDriverCancel").addEventListener("click", () => {
+  document.getElementById("driverModal").classList.add("hidden");
+});
+
+document.getElementById("btnDriverSave").addEventListener("click", async () => {
+  const nombre    = document.getElementById("dNombre").value.trim();
+  const telefono  = document.getElementById("dTelefono").value.trim();
+  const camioneta = document.getElementById("dCamioneta").value;
+  const turno     = document.getElementById("dTurno").value;
+  const zona      = document.getElementById("dZona").value || null;
+
+  if (!nombre || !telefono) {
+    toast("Nombre y teléfono son requeridos", "err");
+    return;
+  }
+
+  try {
+    await API.post("/api/repartidores", { nombre, telefono, camioneta, turno, zona });
+    document.getElementById("driverModal").classList.add("hidden");
+    toast(`Repartidor ${nombre} agregado`);
+    loadDrivers();
+  } catch (err) {
+    toast("Error al agregar: " + err.message, "err");
+  }
+});
+
 /* ── Mapa Leaflet ────────────────────────────────────────────────────────── */
 let _map           = null;
 let _driverMarkers = [];

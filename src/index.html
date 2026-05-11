@@ -134,9 +134,10 @@
       <section id="tab-drivers" class="tab">
         <div class="toolbar">
           <h2 class="section-title">Repartidores</h2>
-          <a href="/repartidor.html" target="_blank" class="btn btn--outline btn--sm">
-            Abrir App Repartidor
-          </a>
+          <div class="toolbar__right">
+            <button id="btnAddDriver" class="btn btn--primary btn--sm">+ Agregar repartidor</button>
+            <a href="/repartidor.html" target="_blank" class="btn btn--outline btn--sm">Abrir App Repartidor</a>
+          </div>
         </div>
         <div class="drivers-grid" id="driversGrid">
           <p class="loading">Cargando…</p>
@@ -202,6 +203,40 @@
         <div class="modal__actions">
           <button id="btnProdCancel" class="btn btn--outline">Cancelar</button>
           <button id="btnProdSave" class="btn btn--primary">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal agregar repartidor -->
+    <div id="driverModal" class="modal hidden">
+      <div class="modal__box">
+        <h3>Nuevo repartidor</h3>
+        <label>Nombre <input id="dNombre" class="input" type="text" placeholder="Ej: Juan García" /></label>
+        <label>Teléfono <input id="dTelefono" class="input" type="tel" placeholder="Ej: 5492994000000" /></label>
+        <label>Camioneta
+          <select id="dCamioneta" class="input">
+            <option value="camioneta_1">Camioneta 1</option>
+            <option value="camioneta_2">Camioneta 2</option>
+          </select>
+        </label>
+        <label>Turno
+          <select id="dTurno" class="input">
+            <option value="manana">Mañana</option>
+            <option value="tarde">Tarde</option>
+          </select>
+        </label>
+        <label>Zona
+          <select id="dZona" class="input">
+            <option value="">Sin asignar</option>
+            <option value="ZONA 1">ZONA 1</option>
+            <option value="ZONA 2">ZONA 2</option>
+            <option value="ZONA 3">ZONA 3</option>
+            <option value="ZONA 4">ZONA 4</option>
+          </select>
+        </label>
+        <div class="modal__actions">
+          <button id="btnDriverCancel" class="btn btn--outline">Cancelar</button>
+          <button id="btnDriverSave" class="btn btn--primary">Guardar</button>
         </div>
       </div>
     </div>
