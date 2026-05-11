@@ -29,11 +29,35 @@ async function api(method, path, body) {
   return res.json();
 }
 
-/* ── Setup: identificar repartidor ──────────────────────────────────────────── */
+/* ── Setup: cargar lista de repartidores en el selector ─────────────────────── */
+async function loadRepList() {
+  const select = document.getElementById("repSelect");
+  const errEl  = document.getElementById("setupError");
+  select.innerHTML = "<option value=''>Cargando…</option>";
+  select.disabled  = true;
+  errEl.style.display = "none";
+
+  try {
+    const reps = await api("GET", "/api/repartidores");
+    if (!reps?.length) {
+      select.innerHTML = "<option value=''>No hay repartidores configurados</option>";
+      return;
+    }
+    select.innerHTML =
+      "<option value=''>— Elegí tu nombre —</option>" +
+      reps.map((r) => `<option value="${r.id}">${r.nombre}</option>`).join("");
+    select.disabled = false;
+  } catch (_) {
+    select.innerHTML = "<option value=''>Error al cargar</option>";
+    errEl.textContent   = "No se pudo conectar. Recargá la página.";
+    errEl.style.display = "block";
+  }
+}
+
 document.getElementById("btnSetupConfirm").addEventListener("click", async () => {
-  const id = parseInt(document.getElementById("repIdInput").value, 10);
-  if (!id || id < 1 || id > 10) {
-    toast("Número inválido");
+  const id = parseInt(document.getElementById("repSelect").value, 10);
+  if (!id) {
+    toast("Elegí un repartidor de la lista");
     return;
   }
   localStorage.setItem("rep_id", id);
@@ -174,8 +198,13 @@ document.getElementById("btnLogout").addEventListener("click", () => {
   localStorage.removeItem("rep_id");
   document.getElementById("setupScreen").style.display = "block";
   document.getElementById("appScreen").style.display   = "none";
+  loadRepList();
 });
 
 /* ── Auto-inicio si ya estaba identificado ───────────────────────────────────── */
 const savedId = parseInt(localStorage.getItem("rep_id") || "", 10);
-if (savedId) initApp(savedId);
+if (savedId) {
+  initApp(savedId);
+} else {
+  loadRepList();
+}

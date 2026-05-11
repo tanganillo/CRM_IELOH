@@ -171,12 +171,15 @@
     </div>
     <h2>Repartidor</h2>
     <p style="text-align:center;color:#888;margin:8px 0 24px">
-      Ingresá tu número de repartidor para comenzar
+      Seleccioná tu nombre para comenzar
     </p>
     <label style="display:block;margin-bottom:8px">
-      Número de repartidor (1–4)
-      <input id="repIdInput" class="input" type="number" min="1" max="4" placeholder="Ej: 1" style="margin-top:6px" />
+      Repartidor
+      <select id="repSelect" class="input" style="margin-top:6px" disabled>
+        <option value="">Cargando…</option>
+      </select>
     </label>
+    <p id="setupError" style="color:#ef4444;font-size:13px;margin:4px 0 0;display:none"></p>
     <button id="btnSetupConfirm" class="btn btn--primary" style="width:100%;margin-top:16px">
       Entrar
     </button>
