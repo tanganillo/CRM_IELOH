@@ -47,6 +47,7 @@ exports.handler = async (event) => {
     await handleMessage(from, name, userMessage);
   } catch (err) {
     console.error("Error manejando mensaje:", err);
+    console.error('Meta error details:', JSON.stringify(err.response?.data, null, 2));
     await sendText(from, "Algo salió mal. Intentá de nuevo en un momento.");
   }
 
