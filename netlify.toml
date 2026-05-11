@@ -69,6 +69,13 @@
   to = "/.netlify/functions/archive-orders"
   status = 200
 
+# Excluir rutas internas de Netlify del fallback
+[[redirects]]
+  from = "/.netlify/*"
+  to = "/.netlify/:splat"
+  status = 200
+  force = true
+
 # SPA fallback (debe ir al final)
 [[redirects]]
   from = "/*"
