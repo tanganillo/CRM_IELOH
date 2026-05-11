@@ -143,12 +143,18 @@ async function handleMessage(from, name, userMessage) {
 
 // ── Helpers de respuesta ──────────────────────────────────────────────────────
 
+const IS_SANDBOX = process.env.WHATSAPP_PHONE_NUMBER_ID === "1074563209079744";
+
 async function sendMainMenu(to, name) {
-  await sendInteractiveButtons(
-    to,
-    `¡Hola ${name}! ¿Qué necesitás?`,
-    ["📋 Catálogo", "📦 Mis pedidos", "🛒 Hacer pedido"]
-  );
+  if (IS_SANDBOX) {
+    await sendText(to, `¡Hola ${name}! ¿Qué necesitás?\n\n1. Catálogo\n2. Mis pedidos\n3. Hacer pedido`);
+  } else {
+    await sendInteractiveButtons(
+      to,
+      `¡Hola ${name}! ¿Qué necesitás?`,
+      ["📋 Catálogo", "📦 Mis pedidos", "🛒 Hacer pedido"]
+    );
+  }
 }
 
 async function sendCatalog(to, catalog) {
