@@ -98,7 +98,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       await sendCatalog(from, catalog);
       return;
     }
-    sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product };
+    sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product, awaitingQuantityRetries: 0 };
     await sendText(
       from,
       `*${product.nombre}* — $${product.precio}\n${product.descripcion || ""}\n\n¿Cuántas unidades querés?`
@@ -112,17 +112,43 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   const ESCAPE_CMDS = new Set([
     "catalogo", "catálogo", "menu_catalogo",
     "estado", "mis pedidos", "menu_pedidos",
-    "hola", "menu", "menú", "ayuda",
+    "hola", "menu", "menú", "ayuda", "menu_principal",
     "pedido", "menu_nuevo_pedido",
     "confirmar_pedido", "cancelar_pedido", "modificar_pedido",
   ]);
+  const CANCEL_INTENT_RE = /\b(cancelar|no\s+quiero|ning[uú]no|dejal[oó]|olvid[aá]lo)\b/;
+  const NEXT_STEP_BUTTONS = [
+    { id: "menu_catalogo", title: "📋 Ver catálogo" },
+    { id: "menu_principal", title: "🏠 Menú principal" },
+  ];
+
   const awaitingProduct = sessions[from]?.awaitingQuantityFor;
   if (awaitingProduct && ESCAPE_CMDS.has(cmd)) {
     delete sessions[from].awaitingQuantityFor;
+    delete sessions[from].awaitingQuantityRetries;
+  } else if (awaitingProduct && CANCEL_INTENT_RE.test(cmd)) {
+    delete sessions[from].awaitingQuantityFor;
+    delete sessions[from].awaitingQuantityRetries;
+    await sendInteractiveButtons(
+      from,
+      `Listo, no agregamos *${awaitingProduct.nombre}*. ¿Querés ver otro producto o volver al menú?`,
+      NEXT_STEP_BUTTONS
+    );
+    return;
   } else if (awaitingProduct) {
     const qty = parseInt(cmd, 10);
     if (!Number.isFinite(qty) || qty <= 0) {
-      await sendText(from, "Decime la cantidad en números, por ejemplo: 2");
+      const retries = (sessions[from].awaitingQuantityRetries || 0) + 1;
+      sessions[from].awaitingQuantityRetries = retries;
+      if (retries >= 2) {
+        await sendInteractiveButtons(
+          from,
+          `Sigo sin entender la cantidad para *${awaitingProduct.nombre}* 🤔\n\nEscribime un número, o elegí una opción:`,
+          NEXT_STEP_BUTTONS
+        );
+      } else {
+        await sendText(from, "Decime la cantidad en números, por ejemplo: 2");
+      }
       return;
     }
     const pending = sessions[from]?.pendingOrder || { items: [] };
@@ -157,7 +183,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     await sendOrderStatus(from, history);
     return;
   }
-  if (cmd === "hola" || cmd === "menu" || cmd === "menú" || cmd === "ayuda") {
+  if (cmd === "hola" || cmd === "menu" || cmd === "menú" || cmd === "ayuda" || cmd === "menu_principal") {
     await sendMainMenu(from, name);
     return;
   }
