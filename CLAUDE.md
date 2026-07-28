@@ -99,6 +99,7 @@ Once a `clientes` row exists for a phone (whichever path), `getClientByPhone` fi
   - `estado_aprobacion` TEXT, no CHECK: `aprobado` | `pendiente`, default `aprobado`
   - `codigo_legacy` INTEGER UNIQUE: código de los ~356 comercios importados del Excel (≤ ~425). Comercios nuevos dados de alta desde WhatsApp sin match previo reciben uno generado a partir de 900000 (ver `nextPendingCodigoLegacy` en `lib/supabase.js`) para no chocar nunca con los legacy
 - `catalogo`: ice products (nombre, descripcion, precio, disponible)
+  - `precio_comercio` / `precio_particular` NUMERIC, nullable: precio dual por tipo de cliente. `precio` (la columna vieja) queda de respaldo — `lib/pricing.js` cae a `precio` si alguna de las dos está NULL. Ver `withClientPricing` en `whatsapp-webhook.js`: se resuelve una sola vez por mensaje, apenas se trae el catálogo, y de ahí para abajo todo el código sigue leyendo `producto.precio`
 - `pedidos`: orders with JSONB `items: [{ nombre, cantidad, precio }]`
   - `estado` CHECK: `pendiente → confirmado → en_camino → entregado | cancelado`
   - `archived BOOLEAN`: set to true after 90-day archiving (records kept for audit)

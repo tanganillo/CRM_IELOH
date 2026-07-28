@@ -13,11 +13,26 @@ exports.handler = async (event) => {
 
     if (method === "POST") {
       const body = JSON.parse(event.body);
-      const { nombre, descripcion, precio, disponible = true } = body;
-      if (!nombre || precio == null) return bad("nombre y precio son requeridos");
+      const { nombre, descripcion, precio, precio_comercio, precio_particular, disponible = true } = body;
+      if (!nombre) return bad("nombre es requerido");
+      if (precio == null && precio_comercio == null && precio_particular == null) {
+        return bad("precio_comercio/precio_particular (o precio) son requeridos");
+      }
+      const payload = {
+        nombre,
+        descripcion,
+        disponible,
+        // `precio` (columna vieja) queda de respaldo -- si no se manda explícito, se
+        // deriva de precio_particular para que las vistas que todavía la leen no
+        // muestren null (ver lib/pricing.js para la resolución por tipo_cliente).
+        precio: precio != null ? precio : (precio_particular ?? precio_comercio),
+      };
+      if (precio_comercio != null) payload.precio_comercio = precio_comercio;
+      if (precio_particular != null) payload.precio_particular = precio_particular;
+
       const { data, error } = await supabase
         .from("catalogo")
-        .insert({ nombre, descripcion, precio, disponible })
+        .insert(payload)
         .select()
         .single();
       if (error) throw error;

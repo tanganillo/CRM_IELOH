@@ -106,3 +106,9 @@ ALTER TABLE clientes
 
 CREATE INDEX IF NOT EXISTS idx_clientes_tipo_cliente      ON clientes(tipo_cliente);
 CREATE INDEX IF NOT EXISTS idx_clientes_estado_aprobacion ON clientes(estado_aprobacion);
+
+-- ── Migración 005: precio dual por tipo de cliente (comercio/particular) ────────────
+-- `precio` no se borra: queda de respaldo, con fallback automático en lib/pricing.js.
+ALTER TABLE catalogo
+  ADD COLUMN IF NOT EXISTS precio_comercio   NUMERIC(10,2),
+  ADD COLUMN IF NOT EXISTS precio_particular NUMERIC(10,2);

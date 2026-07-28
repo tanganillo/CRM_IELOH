@@ -1,5 +1,6 @@
 const { parseIncoming, sendText, sendInteractiveList, sendInteractiveButtons } = require("../../lib/whatsapp");
 const { processMessage } = require("../../lib/claude");
+const { withClientPricing } = require("../../lib/pricing");
 const {
   getClientByPhone,
   upsertClient,
@@ -141,11 +142,14 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // apenas hay un cold start o una invocación concurrente. `session` es el estado vigente
   // para esta invocación; cada mutación se persiste con saveSession/clearSession antes de
   // devolver la respuesta.
-  const [catalog, history, session] = await Promise.all([
+  const [rawCatalog, history, session] = await Promise.all([
     getCatalog(),
     getOrdersByClient(client.id),
     getSession(from),
   ]);
+  // Único punto de resolución de precio por tipo_cliente: de acá para abajo, todo el
+  // código sigue leyendo product.precio como si fuera un solo valor (ver lib/pricing.js).
+  const catalog = withClientPricing(rawCatalog, client.tipo_cliente);
 
   // Selección de un producto desde la lista interactiva del catálogo (list_reply, id "cat_<id>")
   if (cmd.startsWith("cat_")) {
