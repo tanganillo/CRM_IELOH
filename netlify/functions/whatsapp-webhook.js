@@ -114,7 +114,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     "estado", "mis pedidos", "menu_pedidos",
     "hola", "menu", "menú", "ayuda", "menu_principal",
     "pedido", "menu_nuevo_pedido",
-    "confirmar_pedido", "cancelar_pedido", "modificar_pedido",
+    "confirmar_pedido", "cancelar_pedido", "modificar_pedido", "agregar_otro",
   ]);
   const CANCEL_INTENT_RE = /\b(cancelar|no\s+quiero|ning[uú]no|dejal[oó]|olvid[aá]lo)\b/;
   const NEXT_STEP_BUTTONS = [
@@ -164,10 +164,10 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     const resumen = formatOrderSummary(pending);
     await sendInteractiveButtons(
       from,
-      `Agregado ✅\n\n${resumen}\n\nTotal: $${pending.total}\n\n¿Confirmamos el pedido?`,
+      `Agregado ✅\n\n${resumen}\n\nTotal: $${pending.total}\n\n¿Confirmamos el pedido o agregamos algo más?`,
       [
         { id: "confirmar_pedido", title: "✅ Confirmar pedido" },
-        { id: "modificar_pedido", title: "✏️ Modificar" },
+        { id: "agregar_otro", title: "➕ Agregar otro" },
         { id: "cancelar_pedido", title: "❌ Cancelar" },
       ]
     );
@@ -189,6 +189,10 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   }
   if (cmd === "pedido" || cmd === "3" || cmd === "menu_nuevo_pedido") {
     await sendText(from, "Contame qué querés pedir, por ejemplo: *2 bolsas de hielo en cubo de 5kg*.");
+    return;
+  }
+  if (cmd === "agregar_otro") {
+    await sendCatalog(from, catalog);
     return;
   }
   if (cmd === "confirmar_pedido") {
