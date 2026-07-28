@@ -120,7 +120,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       }
     }
 
-    await askQuantity(from, product);
+    await askQuantity(from, product, history);
     return;
   }
 
@@ -145,7 +145,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       orderFlowResolved: true,
     };
     if (resumeProduct) {
-      await askQuantity(from, resumeProduct);
+      await askQuantity(from, resumeProduct, history);
       return;
     }
     await sendCatalog(from, catalog);
@@ -157,7 +157,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     const resumeProduct = sessions[from]?.pendingProductSelection;
     sessions[from] = { pendingOrder: { items: [] }, orderFlowResolved: true };
     if (resumeProduct) {
-      await askQuantity(from, resumeProduct);
+      await askQuantity(from, resumeProduct, history);
       return;
     }
     await sendCatalog(from, catalog);
@@ -242,7 +242,19 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       NEXT_STEP_BUTTONS
     );
     return;
+  } else if (awaitingProduct && cmd === "qty_otra") {
+    // Pidió el botón de cantidad libre: seguimos esperando, la próxima respuesta se
+    // interpreta como número por el branch de texto libre de más abajo.
+    await sendText(from, "Decime la cantidad en números, por ejemplo: 2");
+    return;
+  } else if (awaitingProduct && cmd.startsWith("qty_")) {
+    // Tocó uno de los botones de cantidad sugerida (ids que generamos nosotros mismos,
+    // siempre un entero positivo válido).
+    const qty = parseInt(cmd.slice(4), 10);
+    await addItemToPendingOrder(from, awaitingProduct, qty);
+    return;
   } else if (awaitingProduct) {
+    // Cantidad escrita a mano (ya sea directo o después de tocar "Otra cantidad")
     const qty = parseInt(cmd, 10);
     if (!Number.isFinite(qty) || qty <= 0) {
       const retries = (sessions[from].awaitingQuantityRetries || 0) + 1;
@@ -258,26 +270,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       }
       return;
     }
-    const pending = sessions[from]?.pendingOrder || { items: [] };
-    const existingItem = pending.items.find((i) => i.nombre === awaitingProduct.nombre);
-    if (existingItem) {
-      existingItem.cantidad += qty;
-    } else {
-      pending.items.push({ nombre: awaitingProduct.nombre, cantidad: qty, precio: awaitingProduct.precio });
-    }
-    pending.total = calcTotal(pending.items);
-    sessions[from] = { pendingOrder: pending };
-
-    const resumen = formatOrderSummary(pending);
-    await sendInteractiveButtons(
-      from,
-      `Agregado ✅\n\n${resumen}\n\nTotal: $${pending.total}\n\n¿Confirmamos el pedido o agregamos algo más?`,
-      [
-        { id: "confirmar_pedido", title: "✅ Confirmar pedido" },
-        { id: "agregar_otro", title: "➕ Agregar otro" },
-        { id: "cancelar_pedido", title: "❌ Cancelar" },
-      ]
-    );
+    await addItemToPendingOrder(from, awaitingProduct, qty);
     return;
   }
 
@@ -426,11 +419,64 @@ async function offerUndeliveredOrderChoice(from, existing) {
   );
 }
 
-async function askQuantity(from, product) {
+// Cantidades genéricas cuando el cliente nunca pidió este producto antes. Se eligieron
+// botones en vez de caer al texto libre para que la experiencia sea siempre la misma
+// (nunca sorprende con un prompt distinto), aunque no haya historial que personalizar.
+const GENERIC_QUANTITY_FALLBACK = [2, 5];
+
+// Busca, en el historial ya cargado del cliente (más reciente primero), las cantidades
+// distintas que pidió de este mismo producto — sin repetir valores ya vistos. No hace
+// falta una query nueva a Supabase: history ya trae los pedidos con sus items JSONB.
+function getQuantitySuggestions(history, productName) {
+  const seen = new Set();
+  const suggestions = [];
+  for (const order of history) {
+    for (const item of order.items || []) {
+      if (item.nombre !== productName || seen.has(item.cantidad)) continue;
+      seen.add(item.cantidad);
+      suggestions.push(item.cantidad);
+      if (suggestions.length >= 2) return suggestions;
+    }
+  }
+  return suggestions;
+}
+
+async function askQuantity(from, product, history) {
   sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product, awaitingQuantityRetries: 0 };
-  await sendText(
+
+  const suggested = getQuantitySuggestions(history, product.nombre);
+  const quantities = suggested.length ? suggested : GENERIC_QUANTITY_FALLBACK;
+
+  await sendInteractiveButtons(
     from,
-    `*${product.nombre}* — $${product.precio}\n${product.descripcion || ""}\n\n¿Cuántas unidades querés?`
+    `*${product.nombre}* — $${product.precio}\n${product.descripcion || ""}\n\n¿Cuántas unidades querés?`,
+    [
+      ...quantities.map((q) => ({ id: `qty_${q}`, title: `${q} unidades` })),
+      { id: "qty_otra", title: "✏️ Otra cantidad" },
+    ]
+  );
+}
+
+async function addItemToPendingOrder(from, product, qty) {
+  const pending = sessions[from]?.pendingOrder || { items: [] };
+  const existingItem = pending.items.find((i) => i.nombre === product.nombre);
+  if (existingItem) {
+    existingItem.cantidad += qty;
+  } else {
+    pending.items.push({ nombre: product.nombre, cantidad: qty, precio: product.precio });
+  }
+  pending.total = calcTotal(pending.items);
+  sessions[from] = { pendingOrder: pending };
+
+  const resumen = formatOrderSummary(pending);
+  await sendInteractiveButtons(
+    from,
+    `Agregado ✅\n\n${resumen}\n\nTotal: $${pending.total}\n\n¿Confirmamos el pedido o agregamos algo más?`,
+    [
+      { id: "confirmar_pedido", title: "✅ Confirmar pedido" },
+      { id: "agregar_otro", title: "➕ Agregar otro" },
+      { id: "cancelar_pedido", title: "❌ Cancelar" },
+    ]
   );
 }
 
