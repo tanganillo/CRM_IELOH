@@ -544,23 +544,31 @@ async function offerUndeliveredOrderChoice(from, existing) {
 // (nunca sorprende con un prompt distinto), aunque no haya historial que personalizar.
 const GENERIC_QUANTITY_FALLBACK = [2, 5];
 
-// Busca, en el historial ya cargado del cliente (más reciente primero), las cantidades
-// distintas que pidió de este mismo producto — sin repetir valores ya vistos. No hace
-// falta una query nueva a Supabase: history ya trae los pedidos con sus items JSONB.
-//
-// pedidos.items[].cantidad guarda el TOTAL acumulado de ese producto dentro de todo el
-// pedido, no la cantidad "atómica" que se tipeó en cada agregada individual (ver
-// addItemToPendingOrder: cuando el mismo producto se agrega dos veces a un pedido, se
-// suma sobre el item existente antes de guardar). Supabase nunca guarda ese detalle
-// intermedio, así que no hay forma de recuperar "lo que tipeó cada vez" una vez
-// persistido -- solo el total final por pedido.
+// Busca cantidades sugeridas para un producto, combinando dos fuentes:
+// 1. recentForProduct: cantidades puntuales que el cliente tipeó para ESTE producto en
+//    ESTA sesión (session.recentQuantities, ver addItemToPendingOrder) -- lo más fresco,
+//    va primero.
+// 2. history: pedidos ya confirmados de sesiones anteriores. pedidos.items[].cantidad
+//    guarda el TOTAL acumulado de ese producto dentro de todo el pedido, no la cantidad
+//    "atómica" tipeada en cada agregada individual (si el mismo producto se agrega dos
+//    veces a un pedido, addItemToPendingOrder suma sobre el item existente antes de
+//    guardar). Supabase nunca conserva ese detalle intermedio, así que esta fuente solo
+//    aporta "cuánto pediste en total la última vez", no cada cantidad puntual histórica.
 // excludeOrderId evita el caso circular: si el cliente está sumando productos a un pedido
 // que ya tenía sin entregar (existingOrderId), ese mismo pedido todavía figura en
 // `history` con su estado previo a esta sesión, y su total acumulado no es una sugerencia
 // útil (es el propio pedido en curso, no una referencia histórica independiente).
-function getQuantitySuggestions(history, productName, excludeOrderId) {
+function getQuantitySuggestions(history, productName, excludeOrderId, recentForProduct = []) {
   const seen = new Set();
   const suggestions = [];
+
+  for (const qty of recentForProduct) {
+    if (seen.has(qty)) continue;
+    seen.add(qty);
+    suggestions.push(qty);
+    if (suggestions.length >= 2) return suggestions;
+  }
+
   for (const order of history) {
     if (excludeOrderId && order.id === excludeOrderId) continue;
     for (const item of order.items || []) {
@@ -578,7 +586,13 @@ async function askQuantity(from, product, history, session) {
   session.awaitingQuantityRetries = 0;
   await saveSession(from, session);
 
-  const suggested = getQuantitySuggestions(history, product.nombre, session.pendingOrder?.existingOrderId);
+  const recentForProduct = session.recentQuantities?.[product.nombre] || [];
+  const suggested = getQuantitySuggestions(
+    history,
+    product.nombre,
+    session.pendingOrder?.existingOrderId,
+    recentForProduct
+  );
   const quantities = suggested.length ? suggested : GENERIC_QUANTITY_FALLBACK;
 
   await sendInteractiveButtons(
@@ -601,10 +615,19 @@ async function addItemToPendingOrder(from, product, qty, session) {
   }
   pending.total = calcTotal(pending.items);
 
-  // Limpiamos el estado de "esperando cantidad" y guardamos solo el carrito -- igual que
-  // antes, cualquier otro campo transitorio (candidatos de pedido, flags de resolución)
-  // ya cumplió su propósito y no hace falta arrastrarlo.
-  await saveSession(from, { pendingOrder: pending });
+  // Recordamos la cantidad puntual (no el acumulado) que se tipeó para este producto en
+  // esta sesión, para poder sugerirla la próxima vez sin esperar a que el pedido se
+  // confirme y aparezca en el historial. Más reciente primero, sin duplicados, tope 3.
+  const recentForProduct = (session.recentQuantities?.[product.nombre] || []).filter((q) => q !== qty);
+  const recentQuantities = {
+    ...session.recentQuantities,
+    [product.nombre]: [qty, ...recentForProduct].slice(0, 3),
+  };
+
+  // Limpiamos el estado de "esperando cantidad" pero conservamos el carrito y las
+  // cantidades recientes -- cualquier otro campo transitorio (candidatos de pedido, flags
+  // de resolución) ya cumplió su propósito y no hace falta arrastrarlo.
+  await saveSession(from, { pendingOrder: pending, recentQuantities });
 
   const resumen = formatOrderSummary(pending);
   await sendInteractiveButtons(
