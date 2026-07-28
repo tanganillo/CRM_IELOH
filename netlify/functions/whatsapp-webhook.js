@@ -105,11 +105,22 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       await sendCatalog(from, catalog);
       return;
     }
-    sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product, awaitingQuantityRetries: 0 };
-    await sendText(
-      from,
-      `*${product.nombre}* — $${product.precio}\n${product.descripcion || ""}\n\n¿Cuántas unidades querés?`
-    );
+
+    // Punto único de chequeo: recién acá se sabe que se está por agregar el primer producto
+    // a un pendingOrder vacío/nuevo. Si ya hay un carrito en curso (agregar_otro) o esta
+    // sesión ya resolvió la pregunta, no se vuelve a interrumpir.
+    const session = sessions[from] || {};
+    const cartInProgress = session.pendingOrder?.items?.length > 0;
+    if (!cartInProgress && !session.orderFlowResolved) {
+      const existing = history.find((o) => UNDELIVERED_STATES.has(o.estado));
+      if (existing) {
+        sessions[from] = { ...session, pendingOrderCandidate: existing, pendingProductSelection: product };
+        await offerUndeliveredOrderChoice(from, existing);
+        return;
+      }
+    }
+
+    await askQuantity(from, product);
     return;
   }
 
@@ -117,6 +128,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   if (cmd.startsWith("usar_pedido_")) {
     const orderId = cmd.slice("usar_pedido_".length);
     const candidate = sessions[from]?.pendingOrderCandidate;
+    const resumeProduct = sessions[from]?.pendingProductSelection;
     if (!candidate || String(candidate.id) !== orderId) {
       console.warn("Pedido candidato no coincide o ya no está disponible:", { orderId, candidateId: candidate?.id });
       await sendText(from, "Ese pedido ya no está disponible para modificar. Te muestro el catálogo para armar uno nuevo.");
@@ -132,13 +144,22 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       },
       orderFlowResolved: true,
     };
+    if (resumeProduct) {
+      await askQuantity(from, resumeProduct);
+      return;
+    }
     await sendCatalog(from, catalog);
     return;
   }
 
   // Respuesta a "tenés un pedido sin entregar" — el usuario prefiere uno nuevo aparte
   if (cmd === "pedido_nuevo") {
+    const resumeProduct = sessions[from]?.pendingProductSelection;
     sessions[from] = { pendingOrder: { items: [] }, orderFlowResolved: true };
+    if (resumeProduct) {
+      await askQuantity(from, resumeProduct);
+      return;
+    }
     await sendCatalog(from, catalog);
     return;
   }
@@ -268,7 +289,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
   if (cmd === "pedido" || cmd === "3" || cmd === "menu_nuevo_pedido") {
-    await startOrderFlow(from, client, catalog, history);
+    await sendCatalog(from, catalog);
     return;
   }
   if (cmd === "agregar_otro") {
@@ -295,7 +316,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   const ORDER_INTENT_RE =
     /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b/;
   if (!isInteractive && ORDER_INTENT_RE.test(cmd)) {
-    await startOrderFlow(from, client, catalog, history);
+    await sendCatalog(from, catalog);
     return;
   }
 
@@ -385,22 +406,10 @@ async function confirmPendingOrder(from, client, pending) {
   );
 }
 
-// Antes de mostrar el catálogo para armar un pedido nuevo, chequea si el cliente ya tiene
-// uno sin entregar y ofrece sumarle productos en vez de crear uno aparte por accidente.
-async function startOrderFlow(from, client, catalog, history) {
-  const session = sessions[from] || {};
-  if (session.pendingOrder?.items?.length || session.orderFlowResolved) {
-    await sendCatalog(from, catalog);
-    return;
-  }
-
-  const existing = history.find((o) => UNDELIVERED_STATES.has(o.estado));
-  if (!existing) {
-    await sendCatalog(from, catalog);
-    return;
-  }
-
-  sessions[from] = { ...session, pendingOrderCandidate: existing };
+// Ofrece sumar al pedido sin entregar o armar uno nuevo aparte. Se dispara justo antes de
+// agregar el primer producto a un pendingOrder vacío/nuevo (ver el handler de "cat_"), así
+// cubre por igual el camino de "Catálogo" y el de "Hacer pedido" sin duplicar el chequeo.
+async function offerUndeliveredOrderChoice(from, existing) {
   await sendInteractiveButtons(
     from,
     `Tenés un pedido *#${existing.id}* sin entregar todavía:\n\n${formatOrderSummary(existing)}\n\nTotal: $${existing.total}\n\n¿Sumamos productos a ese pedido o hacemos uno nuevo por separado?`,
@@ -408,6 +417,14 @@ async function startOrderFlow(from, client, catalog, history) {
       { id: `usar_pedido_${existing.id}`, title: "➕ Sumar al pedido" },
       { id: "pedido_nuevo", title: "🆕 Pedido nuevo" },
     ]
+  );
+}
+
+async function askQuantity(from, product) {
+  sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product, awaitingQuantityRetries: 0 };
+  await sendText(
+    from,
+    `*${product.nombre}* — $${product.precio}\n${product.descripcion || ""}\n\n¿Cuántas unidades querés?`
   );
 }
 
