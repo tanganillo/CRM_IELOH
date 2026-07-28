@@ -19,6 +19,57 @@ const UNDELIVERED_STATES = new Set(["pendiente", "confirmado", "en_camino"]);
 // Estados desde los que todavía tiene sentido cancelar un pedido
 const CANCELABLE_STATES = new Set(["pendiente", "confirmado"]);
 
+// ── Tolerancia a typos en la detección de intención de pedido ───────────────────
+// Sin costo de API: distancia de Levenshtein contra un diccionario chico de palabras
+// clave, usada solo para corregir texto libre antes de correr ORDER_INTENT_RE.
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+const ORDER_KEYWORDS = [
+  "agregar", "sumar", "pedido", "producto", "productos",
+  "comprar", "necesito", "quiero", "hacer", "otro", "nuevo", "pedir", "hielo", "algo",
+];
+
+// Reemplaza, palabra por palabra, cualquier token "parecido" a una keyword conocida por
+// la keyword misma. Umbrales conservadores a propósito (largo mínimo 4, distancia máxima
+// 1 para palabras cortas) para no corromper palabras sueltas ajenas al vocabulario del
+// pedido; aunque una palabra se corrija de más, ORDER_INTENT_RE igual exige combinaciones
+// de 2+ keywords consecutivas, así que un solo token corregido de más no dispara nada solo.
+function correctTypos(text, keywords) {
+  return text
+    .split(/(\s+)/)
+    .map((token) => {
+      if (!token.trim()) return token;
+      const bare = token.replace(/[^\p{L}\p{N}]/gu, "");
+      if (bare.length < 4) return token;
+      let best = null;
+      let bestDist = Infinity;
+      for (const kw of keywords) {
+        if (Math.abs(kw.length - bare.length) > 1) continue;
+        const maxDist = kw.length <= 6 ? 1 : 2;
+        const dist = levenshtein(bare, kw);
+        if (dist <= maxDist && dist < bestDist) {
+          best = kw;
+          bestDist = dist;
+        }
+      }
+      return best || token;
+    })
+    .join("");
+}
+
 exports.handler = async (event) => {
   // ── Verificación del webhook (GET) ──────────────────────────────────────────
   if (event.httpMethod === "GET") {
@@ -328,10 +379,11 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // "necesito hielo", "agregar producto al pedido") — dispara el mismo catálogo que el
   // botón "Hacer pedido", sin pasar por Claude. Sin este short-circuit, frases así caen
   // en el fallback de Claude ("otro"/"saludo"), que a veces recita el catálogo entero
-  // como texto plano en vez de la lista interactiva.
+  // como texto plano en vez de la lista interactiva. Se corrigen typos comunes de las
+  // keywords (agregaqr, prodcuto, necestio, etc.) antes de evaluar el regex.
   const ORDER_INTENT_RE =
     /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b|\b(agregar|sumar)\s+(un\s+|otro\s+)?(producto|productos|algo)(\s+(al|a\s+mi)\s+pedido)?\b/;
-  if (!isInteractive && ORDER_INTENT_RE.test(cmd)) {
+  if (!isInteractive && ORDER_INTENT_RE.test(correctTypos(cmd, ORDER_KEYWORDS))) {
     await sendCatalog(from, catalog);
     return;
   }
@@ -381,8 +433,35 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     default:
       // Cancelar pedido pendiente si el usuario lo indica
       if (/cancelar/i.test(userMessage)) delete sessions[from];
-      await sendText(from, aiResponse.message);
+
+      if (aiResponse.parseFailed) {
+        // Claude no devolvió el JSON esperado -- no hay forma de confiar en aiResponse.message
+        // (puede venir con formato raro, incompleto, etc.), así que no lo relayamos tal cual.
+        console.warn("Respuesta de Claude no parseable como JSON, usando mensaje de 'no entendí'");
+        await sendText(
+          from,
+          `No entendí bien eso 🤔 ¿Podés reformularlo? Por ejemplo: "quiero hacer un pedido" o "ver catálogo".`
+        );
+      } else if (looksLikeCatalogRecitation(aiResponse.message, catalog)) {
+        // El JSON parseó bien pero Claude decidió listar el catálogo en prosa en vez de
+        // clasificarlo como intent "catalogo" -- lo corregimos mostrando la lista real.
+        console.warn("Claude recitó el catálogo en texto plano, redirigiendo a sendCatalog");
+        await sendCatalog(from, catalog);
+      } else {
+        await sendText(from, aiResponse.message);
+      }
   }
+}
+
+// Heurística para detectar cuando Claude, en vez de responder puntual, terminó listando
+// varios productos del catálogo en prosa (mismo síntoma que motivó ORDER_INTENT_RE, para
+// los casos que ni así se logran cubrir). Si aparecen 3+ nombres de producto reales, es
+// casi seguro que está recitando el catálogo entero, no respondiendo una pregunta puntual.
+function looksLikeCatalogRecitation(message, catalog) {
+  if (!message || !catalog?.length) return false;
+  const lower = message.toLowerCase();
+  const mentioned = catalog.filter((p) => lower.includes(p.nombre.toLowerCase())).length;
+  return mentioned >= 3;
 }
 
 // ── Helpers de respuesta ──────────────────────────────────────────────────────
