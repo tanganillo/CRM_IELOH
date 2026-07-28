@@ -325,9 +325,12 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   }
 
   // Intención de hacer un pedido en texto libre (ej: "otro pedido", "quiero pedir algo",
-  // "necesito hielo") — dispara el mismo catálogo que el botón "Hacer pedido", sin pasar por Claude.
+  // "necesito hielo", "agregar producto al pedido") — dispara el mismo catálogo que el
+  // botón "Hacer pedido", sin pasar por Claude. Sin este short-circuit, frases así caen
+  // en el fallback de Claude ("otro"/"saludo"), que a veces recita el catálogo entero
+  // como texto plano en vez de la lista interactiva.
   const ORDER_INTENT_RE =
-    /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b/;
+    /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b|\b(agregar|sumar)\s+(un\s+|otro\s+)?(producto|productos|algo)(\s+(al|a\s+mi)\s+pedido)?\b/;
   if (!isInteractive && ORDER_INTENT_RE.test(cmd)) {
     await sendCatalog(from, catalog);
     return;
