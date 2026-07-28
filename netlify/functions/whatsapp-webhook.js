@@ -44,12 +44,12 @@ exports.handler = async (event) => {
   console.log("Mensaje entrante (parseado):", JSON.stringify(incoming));
   if (!incoming) return { statusCode: 200, body: "ok" }; // ignorar notificaciones vacías
 
-  const { from, name, text, interactiveId, type } = incoming;
+  const { from, name, text, interactiveId, interactiveKind, type } = incoming;
   const isInteractive = type === "interactive" || type === "button";
   const userMessage = interactiveId || text;
 
   try {
-    await handleMessage(from, name, userMessage, isInteractive);
+    await handleMessage(from, name, userMessage, isInteractive, interactiveKind);
   } catch (err) {
     console.error("Error manejando mensaje:", err);
     console.error('Meta error details:', JSON.stringify(err.response?.data, null, 2));
@@ -62,7 +62,7 @@ exports.handler = async (event) => {
 
 // ── Lógica principal de conversación ─────────────────────────────────────────
 
-async function handleMessage(from, name, userMessage, isInteractive) {
+async function handleMessage(from, name, userMessage, isInteractive, interactiveKind) {
   // Registrar / recuperar cliente
   let client = await getClientByPhone(from);
   if (!client) {
@@ -79,8 +79,76 @@ async function handleMessage(from, name, userMessage, isInteractive) {
     getOrdersByClient(client.id),
   ]);
 
-  // Comandos rápidos sin IA para reducir latencia (texto libre o ids de botones/listas)
   const cmd = userMessage.toLowerCase().trim();
+
+  // Selección de un producto desde la lista interactiva del catálogo (list_reply, id "cat_<id>")
+  if (cmd.startsWith("cat_")) {
+    const productId = cmd.slice(4);
+    const product = catalog.find((p) => String(p.id) === productId);
+    console.log("Selección de lista (list_reply):", {
+      id: cmd,
+      kind: interactiveKind,
+      matched: !!product,
+      productId: product?.id,
+      productName: product?.nombre,
+    });
+    if (!product) {
+      console.warn("Producto no encontrado para id de lista:", cmd);
+      await sendText(from, "Ese producto ya no está disponible. Volvé a mirar el catálogo.");
+      await sendCatalog(from, catalog);
+      return;
+    }
+    sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product };
+    await sendText(
+      from,
+      `*${product.nombre}* — $${product.precio}\n${product.descripcion || ""}\n\n¿Cuántas unidades querés?`
+    );
+    return;
+  }
+
+  // Respuesta de cantidad para un producto elegido en el paso anterior.
+  // "1"/"2"/"3" quedan afuera del escape porque ahí casi siempre significan cantidad,
+  // no el atajo numérico del menú de sandbox.
+  const ESCAPE_CMDS = new Set([
+    "catalogo", "catálogo", "menu_catalogo",
+    "estado", "mis pedidos", "menu_pedidos",
+    "hola", "menu", "menú", "ayuda",
+    "pedido", "menu_nuevo_pedido",
+    "confirmar_pedido", "cancelar_pedido", "modificar_pedido",
+  ]);
+  const awaitingProduct = sessions[from]?.awaitingQuantityFor;
+  if (awaitingProduct && ESCAPE_CMDS.has(cmd)) {
+    delete sessions[from].awaitingQuantityFor;
+  } else if (awaitingProduct) {
+    const qty = parseInt(cmd, 10);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      await sendText(from, "Decime la cantidad en números, por ejemplo: 2");
+      return;
+    }
+    const pending = sessions[from]?.pendingOrder || { items: [] };
+    const existingItem = pending.items.find((i) => i.nombre === awaitingProduct.nombre);
+    if (existingItem) {
+      existingItem.cantidad += qty;
+    } else {
+      pending.items.push({ nombre: awaitingProduct.nombre, cantidad: qty, precio: awaitingProduct.precio });
+    }
+    pending.total = calcTotal(pending.items);
+    sessions[from] = { pendingOrder: pending };
+
+    const resumen = formatOrderSummary(pending);
+    await sendInteractiveButtons(
+      from,
+      `Agregado ✅\n\n${resumen}\n\nTotal: $${pending.total}\n\n¿Confirmamos el pedido?`,
+      [
+        { id: "confirmar_pedido", title: "✅ Confirmar pedido" },
+        { id: "modificar_pedido", title: "✏️ Modificar" },
+        { id: "cancelar_pedido", title: "❌ Cancelar" },
+      ]
+    );
+    return;
+  }
+
+  // Comandos rápidos sin IA para reducir latencia (texto libre o ids de botones/listas)
   if (cmd === "catalogo" || cmd === "catálogo" || cmd === "1" || cmd === "menu_catalogo") {
     await sendCatalog(from, catalog);
     return;
