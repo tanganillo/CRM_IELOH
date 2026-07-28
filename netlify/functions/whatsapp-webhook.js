@@ -207,6 +207,12 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
 
+  // "Mis pedidos" → ver el historial completo (incluye entregados y cancelados)
+  if (cmd === "mp_historial") {
+    await sendOrderHistory(from, history);
+    return;
+  }
+
   // Respuesta de cantidad para un producto elegido en el paso anterior.
   // "1"/"2"/"3" quedan afuera del escape porque ahí casi siempre significan cantidad,
   // no el atajo numérico del menú de sandbox.
@@ -457,29 +463,39 @@ async function sendCatalog(to, catalog) {
   );
 }
 
+const STATUS_EMOJI = {
+  pendiente:  "🕐",
+  confirmado: "✅",
+  en_camino:  "🚚",
+  entregado:  "📦",
+  cancelado:  "❌",
+};
+
+function formatOrderLine(o) {
+  const emoji = STATUS_EMOJI[o.estado] || "•";
+  const fecha = new Date(o.created_at).toLocaleDateString("es-AR");
+  return `${emoji} *#${o.id}* · ${o.estado.replace("_", " ")} · $${o.total} · ${fecha}`;
+}
+
+// Vista por defecto de "Mis pedidos": solo los activos (sin entregar), con opción de
+// cancelar y de saltar al historial completo si hace falta ver entregados/cancelados.
 async function sendOrderStatus(to, orders) {
-  if (!orders.length) {
-    await sendText(to, "Todavía no tenés pedidos. Escribí *catálogo* para ver los productos.");
+  const active = orders.filter((o) => UNDELIVERED_STATES.has(o.estado)).slice(0, 5);
+
+  if (!active.length) {
+    await sendText(to, "No tenés pedidos activos en este momento.");
+    if (orders.length) {
+      await sendInteractiveButtons(to, "¿Querés ver pedidos anteriores?", [
+        { id: "mp_historial", title: "📜 Ver historial" },
+        { id: "menu_principal", title: "🏠 Menú principal" },
+      ]);
+    }
     return;
   }
-  const STATUS_EMOJI = {
-    pendiente:  "🕐",
-    confirmado: "✅",
-    en_camino:  "🚚",
-    entregado:  "📦",
-    cancelado:  "❌",
-  };
-  const shown = orders.slice(0, 5);
-  const lines = shown.map((o) => {
-    const emoji = STATUS_EMOJI[o.estado] || "•";
-    const fecha = new Date(o.created_at).toLocaleDateString("es-AR");
-    return `${emoji} *#${o.id}* · ${o.estado.replace("_", " ")} · $${o.total} · ${fecha}`;
-  });
-  await sendText(to, `*Tus últimos pedidos*\n\n${lines.join("\n")}`);
 
-  const cancelable = shown.filter((o) => CANCELABLE_STATES.has(o.estado));
-  if (!cancelable.length) return;
+  await sendText(to, `*Tus pedidos activos*\n\n${active.map(formatOrderLine).join("\n")}`);
 
+  const cancelable = active.filter((o) => CANCELABLE_STATES.has(o.estado));
   const sections = [
     {
       title: "Pedidos",
@@ -489,11 +505,22 @@ async function sendOrderStatus(to, orders) {
           title: `Cancelar #${o.id}`,
           description: `$${o.total} · ${o.estado}`,
         })),
+        { id: "mp_historial", title: "Ver historial completo", description: "Incluye entregados y cancelados" },
         { id: "mp_salir", title: "No cancelar nada", description: "Volver al menú principal" },
       ],
     },
   ];
-  await sendInteractiveList(to, "¿Querés cancelar algún pedido?", "Elegir pedido", sections);
+  await sendInteractiveList(to, "¿Querés cancelar algún pedido o ver más?", "Elegir opción", sections);
+}
+
+// "Ver historial completo": los últimos pedidos sin filtrar por estado, solo informativo.
+async function sendOrderHistory(to, orders) {
+  if (!orders.length) {
+    await sendText(to, "Todavía no tenés pedidos. Escribí *catálogo* para ver los productos.");
+    return;
+  }
+  const shown = orders.slice(0, 5);
+  await sendText(to, `*Historial de pedidos*\n\n${shown.map(formatOrderLine).join("\n")}`);
 }
 
 function formatOrderSummary(order) {
