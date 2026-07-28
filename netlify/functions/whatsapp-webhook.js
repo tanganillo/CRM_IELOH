@@ -311,7 +311,12 @@ async function sendCatalog(to, catalog) {
       })),
     },
   ];
-  await sendInteractiveList(to, "Estos son los productos de *ieloh* 🧊", "Ver productos", sections);
+  await sendInteractiveList(
+    to,
+    "Estos son los productos de *ieloh* 🧊\nElegí uno para agregarlo — después vas a poder sumar más antes de confirmar.",
+    "Ver productos",
+    sections
+  );
 }
 
 async function sendOrderStatus(to, orders) {
