@@ -19,6 +19,8 @@ const UNDELIVERED_STATES = new Set(["pendiente", "confirmado", "en_camino"]);
 // Estados desde los que todavía tiene sentido cancelar un pedido
 const CANCELABLE_STATES = new Set(["pendiente", "confirmado"]);
 
+const NO_ENTENDI_MSG = `No entendí bien eso 🤔 ¿Podés reformularlo? Por ejemplo: "quiero hacer un pedido" o "ver catálogo".`;
+
 // ── Tolerancia a typos en la detección de intención de pedido ───────────────────
 // Sin costo de API: distancia de Levenshtein contra un diccionario chico de palabras
 // clave, usada solo para corregir texto libre antes de correr ORDER_INTENT_RE.
@@ -456,10 +458,14 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
         // Claude no devolvió el JSON esperado -- no hay forma de confiar en aiResponse.message
         // (puede venir con formato raro, incompleto, etc.), así que no lo relayamos tal cual.
         console.warn("Respuesta de Claude no parseable como JSON, usando mensaje de 'no entendí'");
-        await sendText(
-          from,
-          `No entendí bien eso 🤔 ¿Podés reformularlo? Por ejemplo: "quiero hacer un pedido" o "ver catálogo".`
-        );
+        await sendText(from, NO_ENTENDI_MSG);
+      } else if (aiResponse.intent === "no_reconocido") {
+        // El propio Claude marcó que no está seguro de la intención -- se le pidió
+        // explícitamente en el prompt que prefiera esto antes que improvisar una
+        // respuesta (ver SYSTEM_PROMPT en lib/claude.js). Reemplaza tener que anticipar
+        // cada frase nueva a mano en ORDER_INTENT_RE: acá es Claude el que se autolimita.
+        console.warn("Claude marcó intent no_reconocido, usando mensaje de 'no entendí'");
+        await sendText(from, NO_ENTENDI_MSG);
       } else if (looksLikeCatalogRecitation(aiResponse.message, catalog)) {
         // El JSON parseó bien pero Claude decidió listar el catálogo en prosa en vez de
         // clasificarlo como intent "catalogo" -- lo corregimos mostrando la lista real.
