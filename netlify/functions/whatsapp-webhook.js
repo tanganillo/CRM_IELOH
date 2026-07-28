@@ -223,7 +223,9 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     "pedido", "menu_nuevo_pedido",
     "confirmar_pedido", "cancelar_pedido", "modificar_pedido", "agregar_otro",
   ]);
-  const CANCEL_INTENT_RE = /\b(cancelar|no\s+quiero|ning[uú]no|dejal[oó]|olvid[aá]lo)\b/;
+  // El \b final se reemplaza por un lookahead: en JS \b no reconoce vocales acentuadas
+  // como caracteres de palabra, así que "dejaló"/"olvídalo" no matcheaban con \b al final.
+  const CANCEL_INTENT_RE = /\b(cancelar|no\s+quiero|ning[uú]no|dejal[oó]|olv[ií]dalo)(?![a-záéíóúñ])/;
   const NEXT_STEP_BUTTONS = [
     { id: "menu_catalogo", title: "📋 Ver catálogo" },
     { id: "menu_principal", title: "🏠 Menú principal" },
@@ -279,7 +281,19 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     await sendCatalog(from, catalog);
     return;
   }
-  if (cmd === "estado" || cmd === "mis pedidos" || cmd === "2" || cmd === "menu_pedidos") {
+  // "estado"/"mis pedidos" ya cubre los atajos exactos; ORDER_DETAIL_RE suma frases en
+  // texto libre que piden lo mismo ("qué pedí", "detalle del pedido", "mostrame el
+  // detalle") — sendOrderStatus ya incluye el detalle de items, así que alcanza con
+  // enrutarlas al mismo lugar, sin necesidad de rastrear si "recién" consultaron Mis pedidos.
+  const ORDER_DETAIL_RE =
+    /\bqu[eé]\s+ped[ií](?![a-záéíóúñ])|\bdetalle\s+(del|de\s+mi)?\s*pedido\b|\bmostrame?\s+el\s+detalle\b|\bver\s+detalle\b/;
+  if (
+    cmd === "estado" ||
+    cmd === "mis pedidos" ||
+    cmd === "2" ||
+    cmd === "menu_pedidos" ||
+    (!isInteractive && ORDER_DETAIL_RE.test(cmd))
+  ) {
     await sendOrderStatus(from, history);
     return;
   }
@@ -539,7 +553,21 @@ async function sendOrderStatus(to, orders) {
     return;
   }
 
-  await sendText(to, `*Tus pedidos activos*\n\n${active.map(formatOrderLine).join("\n")}`);
+  // Detalle completo (encabezado + items) de cada pedido activo. Los activos son pocos por
+  // naturaleza (se entregan o cancelan rápido), así que casi siempre entra cómodo en un
+  // solo mensaje; si alguna vez no entrara, caemos al resumen corto de antes en vez de
+  // arriesgarnos a que WhatsApp corte o rechace el mensaje por longitud.
+  const detailedBlocks = active.map((o) => {
+    const items = formatOrderSummary(o);
+    return items ? `${formatOrderLine(o)}\n${items}` : formatOrderLine(o);
+  });
+  const detailedText = `*Tus pedidos activos*\n\n${detailedBlocks.join("\n\n")}`;
+  const MAX_TEXT_LENGTH = 3500;
+  const statusText =
+    detailedText.length <= MAX_TEXT_LENGTH
+      ? detailedText
+      : `*Tus pedidos activos*\n\n${active.map(formatOrderLine).join("\n")}`;
+  await sendText(to, statusText);
 
   const cancelable = active.filter((o) => CANCELABLE_STATES.has(o.estado));
   const sections = [
