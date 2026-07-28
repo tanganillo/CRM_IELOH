@@ -392,13 +392,14 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   }
 
   // Intención de hacer un pedido en texto libre (ej: "otro pedido", "quiero pedir algo",
-  // "necesito hielo", "agregar producto al pedido") — dispara el mismo catálogo que el
-  // botón "Hacer pedido", sin pasar por Claude. Sin este short-circuit, frases así caen
-  // en el fallback de Claude ("otro"/"saludo"), que a veces recita el catálogo entero
-  // como texto plano en vez de la lista interactiva. Se corrigen typos comunes de las
-  // keywords (agregaqr, prodcuto, necestio, etc.) antes de evaluar el regex.
+  // "necesito hielo", "agregar producto al pedido", "sumar al pedido") — dispara el mismo
+  // catálogo que el botón "Hacer pedido", sin pasar por Claude. Sin este short-circuit,
+  // frases así caen en el fallback de Claude ("otro"/"saludo"), que a veces improvisa
+  // respuestas incorrectas (ej: asegurar que no hay pedidos activos sin haber consultado
+  // la detección real) en vez de dirigir al flujo correcto. Se corrigen typos comunes de
+  // las keywords (agregaqr, prodcuto, necestio, apedido, etc.) antes de evaluar el regex.
   const ORDER_INTENT_RE =
-    /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b|\b(agregar|sumar)\s+(un\s+|otro\s+)?(producto|productos|algo)(\s+(al|a\s+mi)\s+pedido)?\b/;
+    /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b|\b(agregar|sumar)\s+(un\s+|otro\s+)?(producto|productos|algo)(\s+(al|a\s+mi)\s+pedido)?\b|\b(agregar|sumar)\s+(algo\s+)?(al|a\s+mi)\s+pedido\b/;
   if (!isInteractive && ORDER_INTENT_RE.test(correctTypos(cmd, ORDER_KEYWORDS))) {
     await sendCatalog(from, catalog);
     return;
