@@ -188,7 +188,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
   if (cmd === "pedido" || cmd === "3" || cmd === "menu_nuevo_pedido") {
-    await sendText(from, "Contame qué querés pedir, por ejemplo: *2 bolsas de hielo en cubo de 5kg*.");
+    await sendCatalog(from, catalog);
     return;
   }
   if (cmd === "agregar_otro") {
@@ -207,6 +207,15 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   }
   if (cmd === "modificar_pedido") {
     await sendText(from, "Contame qué cambios querés hacer en tu pedido.");
+    return;
+  }
+
+  // Intención de hacer un pedido en texto libre (ej: "otro pedido", "quiero pedir algo",
+  // "necesito hielo") — dispara el mismo catálogo que el botón "Hacer pedido", sin pasar por Claude.
+  const ORDER_INTENT_RE =
+    /\b(hacer|otro|nuevo|quiero)\s+(un\s+)?pedido\b|\bquiero\s+pedir\b|\bpedir\s+algo\b|\b(necesito|quiero)\s+(hielo|comprar)\b/;
+  if (!isInteractive && ORDER_INTENT_RE.test(cmd)) {
+    await sendCatalog(from, catalog);
     return;
   }
 
