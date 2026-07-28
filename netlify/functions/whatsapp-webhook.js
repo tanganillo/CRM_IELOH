@@ -3,6 +3,9 @@ const { processMessage } = require("../../lib/claude");
 const {
   getClientByPhone,
   upsertClient,
+  getClientByCodigoLegacy,
+  linkPhoneToClient,
+  nextPendingCodigoLegacy,
   getCatalog,
   getOrdersByClient,
   getLastOrderByClient,
@@ -123,14 +126,12 @@ exports.handler = async (event) => {
 // ── Lógica principal de conversación ─────────────────────────────────────────
 
 async function handleMessage(from, name, userMessage, isInteractive, interactiveKind) {
+  const cmd = userMessage.toLowerCase().trim();
+
   // Registrar / recuperar cliente
   let client = await getClientByPhone(from);
   if (!client) {
-    client = await upsertClient({ telefono: from, nombre: name });
-    await sendText(
-      from,
-      `¡Hola ${name}! Soy el bot de *ieloh* 🧊\n\nEscribí *catálogo* para ver los productos o *pedido* para hacer uno.`
-    );
+    await handleNewClientFlow(from, name, cmd);
     return;
   }
 
@@ -145,8 +146,6 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     getOrdersByClient(client.id),
     getSession(from),
   ]);
-
-  const cmd = userMessage.toLowerCase().trim();
 
   // Selección de un producto desde la lista interactiva del catálogo (list_reply, id "cat_<id>")
   if (cmd.startsWith("cat_")) {
@@ -474,6 +473,102 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       } else {
         await sendText(from, aiResponse.message);
       }
+  }
+}
+
+// ── Alta de cliente nuevo: particular vs comercio ───────────────────────────────
+// Antes de mostrar el menú principal a un teléfono nunca visto, se pregunta con botones
+// si es un comercio ya dado de alta (matchea contra codigo_legacy) o un particular. La
+// pregunta se hace una sola vez por conversación: apenas se resuelve, el cliente queda
+// creado en la tabla `clientes` y las próximas veces `getClientByPhone` ya lo encuentra,
+// así que este flujo nunca se re-dispara para ese número.
+const CLIENT_TYPE_BUTTONS = [
+  { id: "tipo_comercio", title: "🏪 Comercio" },
+  { id: "tipo_particular", title: "🙋 Particular" },
+];
+
+async function handleNewClientFlow(from, name, cmd) {
+  const session = await getSession(from);
+
+  if (cmd === "tipo_particular") {
+    await upsertClient({ telefono: from, nombre: name, tipo_cliente: "particular", estado_aprobacion: "aprobado" });
+    await clearSession(from);
+    await sendText(
+      from,
+      `¡Hola ${name}! Soy el bot de *ieloh* 🧊\n\nEscribí *catálogo* para ver los productos o *pedido* para hacer uno.`
+    );
+    return;
+  }
+
+  if (cmd === "tipo_comercio") {
+    await saveSession(from, { awaitingComercioCode: true });
+    await sendText(from, "Decime tu ID de cliente (el código que te dieron al darte de alta como comercio):");
+    return;
+  }
+
+  if (session.awaitingComercioCode) {
+    const codigo = parseInt(cmd, 10);
+    if (!Number.isFinite(codigo) || String(codigo) !== cmd) {
+      await sendText(from, "Ese código no parece válido. Escribilo solo con números, por ejemplo: 123");
+      return;
+    }
+
+    const existing = await getClientByCodigoLegacy(codigo);
+    if (existing) {
+      await linkPhoneToClient(existing.id, from);
+      await clearSession(from);
+      await sendText(
+        from,
+        `¡Listo! Vinculamos este WhatsApp a *${existing.nombre}*.\n\nEscribí *catálogo* para ver los productos o *pedido* para hacer uno.`
+      );
+      return;
+    }
+
+    const nuevoCodigo = await nextPendingCodigoLegacy();
+    await upsertClient({
+      telefono: from,
+      nombre: name,
+      tipo_cliente: "comercio",
+      estado_aprobacion: "pendiente",
+      codigo_legacy: nuevoCodigo,
+    });
+    await clearSession(from);
+    await notifyAdminNewComercio({ telefono: from, nombre: name, codigo_legacy: nuevoCodigo });
+    await sendText(
+      from,
+      `Recibimos tu solicitud como comercio (ID *${nuevoCodigo}*), la estamos revisando 🕐\n\nMientras tanto podés seguir pidiendo como particular.\n\nEscribí *catálogo* para ver los productos o *pedido* para hacer uno.`
+    );
+    return;
+  }
+
+  // Primer contacto (o respondió algo que no matchea ninguno de los botones/estados de
+  // arriba): (re)preguntamos, sin costo de repetir si ya se había preguntado antes.
+  await sendInteractiveButtons(
+    from,
+    `¡Hola ${name}! Soy el bot de *ieloh* 🧊\n\n¿Sos cliente registrado (comercio) o particular?`,
+    CLIENT_TYPE_BUTTONS
+  );
+}
+
+// Avisa al admin por WhatsApp de un comercio nuevo pendiente de aprobación manual desde el
+// CRM. ADMIN_WHATSAPP_NUMBER todavía no está seteada en ningún ambiente -- si falta, se
+// loguea un warning y se sigue el flujo normal (no debe romper el alta del cliente).
+async function notifyAdminNewComercio({ telefono, nombre, codigo_legacy }) {
+  const adminNumber = process.env.ADMIN_WHATSAPP_NUMBER;
+  if (!adminNumber) {
+    console.warn("ADMIN_WHATSAPP_NUMBER no configurado: no se pudo avisar del comercio pendiente", {
+      telefono,
+      codigo_legacy,
+    });
+    return;
+  }
+  try {
+    await sendText(
+      adminNumber,
+      `🆕 *Comercio nuevo pendiente de aprobación*\n\nTeléfono: ${telefono}\nNombre: ${nombre}\nID asignado: ${codigo_legacy}\n\nRevisalo en el CRM para aprobarlo.`
+    );
+  } catch (err) {
+    console.error("Error avisando al admin sobre comercio pendiente:", err.message);
   }
 }
 

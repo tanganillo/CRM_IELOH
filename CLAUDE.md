@@ -77,6 +77,17 @@ Short-circuit keywords (`catalogo`, `estado`, `hola`, etc.) are handled before c
 
 `sessions` is a module-level object — it persists across warm invocations of the same function instance but is lost on cold starts. This is intentional and acceptable for short-lived order flows.
 
+### New-client flow (`handleNewClientFlow` in `whatsapp-webhook.js`)
+
+A phone number with no `clientes` row is asked (via buttons) whether it's a registered `comercio` or a `particular`, before ever seeing the main menu. State machine lives in the `sesiones` table (`awaitingComercioCode`) since no `clientes` row exists yet to key off of:
+
+- **Particular**: creates the client immediately (`tipo_cliente='particular'`, `estado_aprobacion='aprobado'`) and proceeds.
+- **Comercio**: asks for their `codigo_legacy` as free text.
+  - Match found → links the phone to that record (`linkPhoneToClient`), inheriting `comercio`/`aprobado`.
+  - No match → creates a new client with `tipo_cliente='comercio'`, `estado_aprobacion='pendiente'`, a freshly generated `codigo_legacy` (see above), notifies `ADMIN_WHATSAPP_NUMBER` via WhatsApp (warns and continues if unset), and tells the customer they can keep ordering as a particular while the request is reviewed.
+
+Once a `clientes` row exists for a phone (whichever path), `getClientByPhone` finds it on every future message, so this question is never asked again for that number. There is no approval UI yet — `estado_aprobacion='pendiente'` rows just sit there until a future CRM feature approves them.
+
 ### Claude integration (`lib/claude.js`)
 
 `processMessage` injects live catalog and last-3-orders history into the system prompt before every call. The model is always `claude-sonnet-4-6`. The response is expected to be JSON; a regex fallback extracts it if Claude wraps it in prose.
@@ -84,6 +95,9 @@ Short-circuit keywords (`catalogo`, `estado`, `hola`, etc.) are handled before c
 ### Data model
 
 - `clientes`: WhatsApp contacts (telefono, nombre, direccion)
+  - `tipo_cliente` TEXT, no CHECK (extensible sin migración): `particular` | `comercio`, default `particular`
+  - `estado_aprobacion` TEXT, no CHECK: `aprobado` | `pendiente`, default `aprobado`
+  - `codigo_legacy` INTEGER UNIQUE: código de los ~356 comercios importados del Excel (≤ ~425). Comercios nuevos dados de alta desde WhatsApp sin match previo reciben uno generado a partir de 900000 (ver `nextPendingCodigoLegacy` en `lib/supabase.js`) para no chocar nunca con los legacy
 - `catalogo`: ice products (nombre, descripcion, precio, disponible)
 - `pedidos`: orders with JSONB `items: [{ nombre, cantidad, precio }]`
   - `estado` CHECK: `pendiente → confirmado → en_camino → entregado | cancelado`
@@ -133,6 +147,7 @@ All required vars are documented in `.env.example`. For local dev, copy to `.env
 | `GOOGLE_SHEET_ID` | Google Sheets document ID |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | Full JSON of service account credentials |
 | `APP_URL` | Deployed Netlify URL |
+| `ADMIN_WHATSAPP_NUMBER` | Admin's WhatsApp number (E.164), notified when a new comercio signs up pending approval. Optional — logs a warning and continues if unset |
 
 ## Deployment checklist (first time)
 

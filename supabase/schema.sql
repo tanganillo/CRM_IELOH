@@ -97,3 +97,12 @@ CREATE TABLE IF NOT EXISTS sesiones (
 );
 
 ALTER TABLE sesiones ENABLE ROW LEVEL SECURITY;
+
+-- ── Migración 004: tipo de cliente (particular/comercio, extensible) + aprobación ────
+-- Sin CHECK a propósito: permite sumar valores nuevos (ej. "mayorista") sin otra migración.
+ALTER TABLE clientes
+  ADD COLUMN IF NOT EXISTS tipo_cliente      TEXT NOT NULL DEFAULT 'particular',
+  ADD COLUMN IF NOT EXISTS estado_aprobacion TEXT NOT NULL DEFAULT 'aprobado';
+
+CREATE INDEX IF NOT EXISTS idx_clientes_tipo_cliente      ON clientes(tipo_cliente);
+CREATE INDEX IF NOT EXISTS idx_clientes_estado_aprobacion ON clientes(estado_aprobacion);
