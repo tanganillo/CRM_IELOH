@@ -8,6 +8,7 @@ const {
   getLastOrderByClient,
   createOrder,
   updateOrderItems,
+  updateOrderStatus,
 } = require("../../lib/supabase");
 
 // Sesiones en memoria (se pierden al reiniciar — aceptable para Netlify Functions cortas)
@@ -15,6 +16,8 @@ const sessions = {};
 
 // Estados de pedidos.estado que todavía no llegaron al cliente
 const UNDELIVERED_STATES = new Set(["pendiente", "confirmado", "en_camino"]);
+// Estados desde los que todavía tiene sentido cancelar un pedido
+const CANCELABLE_STATES = new Set(["pendiente", "confirmado"]);
 
 exports.handler = async (event) => {
   // ── Verificación del webhook (GET) ──────────────────────────────────────────
@@ -137,6 +140,49 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   if (cmd === "pedido_nuevo") {
     sessions[from] = { pendingOrder: { items: [] }, orderFlowResolved: true };
     await sendCatalog(from, catalog);
+    return;
+  }
+
+  // "Mis pedidos" → el usuario eligió un pedido para cancelar: pedir confirmación explícita
+  if (cmd.startsWith("mp_cancelar_")) {
+    const orderId = cmd.slice("mp_cancelar_".length);
+    const order = history.find((o) => String(o.id) === orderId && CANCELABLE_STATES.has(o.estado));
+    if (!order) {
+      console.warn("Pedido no cancelable o no encontrado:", orderId);
+      await sendText(from, "Ese pedido ya no se puede cancelar (puede haber cambiado de estado).");
+      await sendMainMenu(from, name);
+      return;
+    }
+    await sendInteractiveButtons(
+      from,
+      `¿Confirmás cancelar el pedido *#${order.id}* por $${order.total}?`,
+      [
+        { id: `mp_confirmar_${order.id}`, title: "✅ Sí, cancelar" },
+        { id: `mp_no_${order.id}`, title: "❌ No, dejarlo" },
+      ]
+    );
+    return;
+  }
+
+  // "Mis pedidos" → confirmación explícita de la cancelación
+  if (cmd.startsWith("mp_confirmar_")) {
+    const orderId = cmd.slice("mp_confirmar_".length);
+    const order = history.find((o) => String(o.id) === orderId && CANCELABLE_STATES.has(o.estado));
+    if (!order) {
+      await sendText(from, "Ese pedido ya no se puede cancelar (puede haber cambiado de estado).");
+      await sendMainMenu(from, name);
+      return;
+    }
+    await updateOrderStatus(order.id, "cancelado");
+    await sendText(from, `❌ *Pedido #${order.id} cancelado.*`);
+    await sendMainMenu(from, name);
+    return;
+  }
+
+  // "Mis pedidos" → el usuario decide no cancelar nada
+  if (cmd === "mp_salir" || cmd.startsWith("mp_no_")) {
+    await sendText(from, "Listo, no cancelamos nada. 👍");
+    await sendMainMenu(from, name);
     return;
   }
 
@@ -400,12 +446,31 @@ async function sendOrderStatus(to, orders) {
     entregado:  "📦",
     cancelado:  "❌",
   };
-  const lines = orders.slice(0, 5).map((o) => {
+  const shown = orders.slice(0, 5);
+  const lines = shown.map((o) => {
     const emoji = STATUS_EMOJI[o.estado] || "•";
     const fecha = new Date(o.created_at).toLocaleDateString("es-AR");
     return `${emoji} *#${o.id}* · ${o.estado.replace("_", " ")} · $${o.total} · ${fecha}`;
   });
   await sendText(to, `*Tus últimos pedidos*\n\n${lines.join("\n")}`);
+
+  const cancelable = shown.filter((o) => CANCELABLE_STATES.has(o.estado));
+  if (!cancelable.length) return;
+
+  const sections = [
+    {
+      title: "Pedidos",
+      rows: [
+        ...cancelable.map((o) => ({
+          id: `mp_cancelar_${o.id}`,
+          title: `Cancelar #${o.id}`,
+          description: `$${o.total} · ${o.estado}`,
+        })),
+        { id: "mp_salir", title: "No cancelar nada", description: "Volver al menú principal" },
+      ],
+    },
+  ];
+  await sendInteractiveList(to, "¿Querés cancelar algún pedido?", "Elegir pedido", sections);
 }
 
 function formatOrderSummary(order) {
