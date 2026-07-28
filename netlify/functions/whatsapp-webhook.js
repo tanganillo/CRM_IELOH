@@ -9,10 +9,10 @@ const {
   createOrder,
   updateOrderItems,
   updateOrderStatus,
+  getSession,
+  saveSession,
+  clearSession,
 } = require("../../lib/supabase");
-
-// Sesiones en memoria (se pierden al reiniciar — aceptable para Netlify Functions cortas)
-const sessions = {};
 
 // Estados de pedidos.estado que todavía no llegaron al cliente
 const UNDELIVERED_STATES = new Set(["pendiente", "confirmado", "en_camino"]);
@@ -132,9 +132,16 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
 
-  const [catalog, history] = await Promise.all([
+  // El estado de la conversación se persiste en Supabase (tabla sesiones) en vez de en
+  // memoria: dos mensajes seguidos del mismo cliente no tienen garantía de caer en el
+  // mismo contenedor de Netlify, así que un objeto en memoria se pierde entre mensajes
+  // apenas hay un cold start o una invocación concurrente. `session` es el estado vigente
+  // para esta invocación; cada mutación se persiste con saveSession/clearSession antes de
+  // devolver la respuesta.
+  const [catalog, history, session] = await Promise.all([
     getCatalog(),
     getOrdersByClient(client.id),
+    getSession(from),
   ]);
 
   const cmd = userMessage.toLowerCase().trim();
@@ -160,34 +167,36 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     // Punto único de chequeo: recién acá se sabe que se está por agregar el primer producto
     // a un pendingOrder vacío/nuevo. Si ya hay un carrito en curso (agregar_otro) o esta
     // sesión ya resolvió la pregunta, no se vuelve a interrumpir.
-    const session = sessions[from] || {};
     const cartInProgress = session.pendingOrder?.items?.length > 0;
     if (!cartInProgress && !session.orderFlowResolved) {
       const existing = history.find((o) => UNDELIVERED_STATES.has(o.estado));
       if (existing) {
-        sessions[from] = { ...session, pendingOrderCandidate: existing, pendingProductSelection: product };
+        session.pendingOrderCandidate = existing;
+        session.pendingProductSelection = product;
+        await saveSession(from, session);
         await offerUndeliveredOrderChoice(from, existing);
         return;
       }
     }
 
-    await askQuantity(from, product, history);
+    await askQuantity(from, product, history, session);
     return;
   }
 
   // Respuesta a "tenés un pedido sin entregar" — el usuario elige sumar a ese pedido
   if (cmd.startsWith("usar_pedido_")) {
     const orderId = cmd.slice("usar_pedido_".length);
-    const candidate = sessions[from]?.pendingOrderCandidate;
-    const resumeProduct = sessions[from]?.pendingProductSelection;
+    const candidate = session.pendingOrderCandidate;
+    const resumeProduct = session.pendingProductSelection;
     if (!candidate || String(candidate.id) !== orderId) {
       console.warn("Pedido candidato no coincide o ya no está disponible:", { orderId, candidateId: candidate?.id });
       await sendText(from, "Ese pedido ya no está disponible para modificar. Te muestro el catálogo para armar uno nuevo.");
-      sessions[from] = { pendingOrder: { items: [] }, orderFlowResolved: true };
+      const freshSession = { pendingOrder: { items: [] }, orderFlowResolved: true };
+      await saveSession(from, freshSession);
       await sendCatalog(from, catalog);
       return;
     }
-    sessions[from] = {
+    const nextSession = {
       pendingOrder: {
         items: JSON.parse(JSON.stringify(candidate.items || [])),
         total: candidate.total,
@@ -195,8 +204,9 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       },
       orderFlowResolved: true,
     };
+    await saveSession(from, nextSession);
     if (resumeProduct) {
-      await askQuantity(from, resumeProduct, history);
+      await askQuantity(from, resumeProduct, history, nextSession);
       return;
     }
     await sendCatalog(from, catalog);
@@ -205,10 +215,11 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
 
   // Respuesta a "tenés un pedido sin entregar" — el usuario prefiere uno nuevo aparte
   if (cmd === "pedido_nuevo") {
-    const resumeProduct = sessions[from]?.pendingProductSelection;
-    sessions[from] = { pendingOrder: { items: [] }, orderFlowResolved: true };
+    const resumeProduct = session.pendingProductSelection;
+    const nextSession = { pendingOrder: { items: [] }, orderFlowResolved: true };
+    await saveSession(from, nextSession);
     if (resumeProduct) {
-      await askQuantity(from, resumeProduct, history);
+      await askQuantity(from, resumeProduct, history, nextSession);
       return;
     }
     await sendCatalog(from, catalog);
@@ -282,13 +293,15 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     { id: "menu_principal", title: "🏠 Menú principal" },
   ];
 
-  const awaitingProduct = sessions[from]?.awaitingQuantityFor;
+  const awaitingProduct = session.awaitingQuantityFor;
   if (awaitingProduct && ESCAPE_CMDS.has(cmd)) {
-    delete sessions[from].awaitingQuantityFor;
-    delete sessions[from].awaitingQuantityRetries;
+    delete session.awaitingQuantityFor;
+    delete session.awaitingQuantityRetries;
+    await saveSession(from, session);
   } else if (awaitingProduct && CANCEL_INTENT_RE.test(cmd)) {
-    delete sessions[from].awaitingQuantityFor;
-    delete sessions[from].awaitingQuantityRetries;
+    delete session.awaitingQuantityFor;
+    delete session.awaitingQuantityRetries;
+    await saveSession(from, session);
     await sendInteractiveButtons(
       from,
       `Listo, no agregamos *${awaitingProduct.nombre}*. ¿Querés ver otro producto o volver al menú?`,
@@ -297,22 +310,26 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   } else if (awaitingProduct && cmd === "qty_otra") {
     // Pidió el botón de cantidad libre: seguimos esperando, la próxima respuesta se
-    // interpreta como número por el branch de texto libre de más abajo.
+    // interpreta como número por el branch de texto libre de más abajo. El estado ya
+    // está persistido desde que se mostraron los botones (askQuantity), no hace falta
+    // volver a guardarlo acá.
     await sendText(from, "Decime la cantidad en números, por ejemplo: 2");
     return;
   } else if (awaitingProduct && cmd.startsWith("qty_")) {
     // Tocó uno de los botones de cantidad sugerida (ids que generamos nosotros mismos,
     // siempre un entero positivo válido).
     const qty = parseInt(cmd.slice(4), 10);
-    await addItemToPendingOrder(from, awaitingProduct, qty);
+    await addItemToPendingOrder(from, awaitingProduct, qty, session);
     return;
   } else if (awaitingProduct) {
-    // Cantidad escrita a mano (ya sea directo o después de tocar "Otra cantidad")
+    // Cantidad escrita a mano (ya sea directo o después de tocar "Otra cantidad") -- se
+    // acepta en cualquier momento del estado awaitingQuantityFor, coincida o no con las
+    // cantidades sugeridas en los botones.
     const qty = parseInt(cmd, 10);
     if (!Number.isFinite(qty) || qty <= 0) {
-      const retries = (sessions[from].awaitingQuantityRetries || 0) + 1;
-      sessions[from].awaitingQuantityRetries = retries;
-      if (retries >= 2) {
+      session.awaitingQuantityRetries = (session.awaitingQuantityRetries || 0) + 1;
+      await saveSession(from, session);
+      if (session.awaitingQuantityRetries >= 2) {
         await sendInteractiveButtons(
           from,
           `Sigo sin entender la cantidad para *${awaitingProduct.nombre}* 🤔\n\nEscribime un número, o elegí una opción:`,
@@ -323,7 +340,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       }
       return;
     }
-    await addItemToPendingOrder(from, awaitingProduct, qty);
+    await addItemToPendingOrder(from, awaitingProduct, qty, session);
     return;
   }
 
@@ -361,12 +378,11 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
   if (cmd === "confirmar_pedido") {
-    const session = sessions[from] || {};
     await confirmPendingOrder(from, client, session.pendingOrder);
     return;
   }
   if (cmd === "cancelar_pedido") {
-    delete sessions[from];
+    await clearSession(from);
     await sendText(from, "Pedido cancelado. Escribí *catálogo* para ver los productos o contame qué necesitás.");
     return;
   }
@@ -396,7 +412,6 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   }
 
   // Procesar con Claude
-  const session = sessions[from] || {};
   const aiResponse = await processMessage({ userMessage, catalog, history });
 
   switch (aiResponse.intent) {
@@ -408,8 +423,9 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       await sendOrderStatus(from, history);
       break;
 
-    case "nuevo_pedido":
-      sessions[from] = { pendingOrder: aiResponse.order };
+    case "nuevo_pedido": {
+      const nextSession = { pendingOrder: aiResponse.order };
+      await saveSession(from, nextSession);
       if (aiResponse.order?.items?.length) {
         const resumen = formatOrderSummary(aiResponse.order);
         await sendInteractiveButtons(
@@ -425,6 +441,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
         await sendText(from, aiResponse.message);
       }
       break;
+    }
 
     case "confirmacion_pedido":
       await confirmPendingOrder(from, client, session.pendingOrder || aiResponse.order);
@@ -432,7 +449,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
 
     default:
       // Cancelar pedido pendiente si el usuario lo indica
-      if (/cancelar/i.test(userMessage)) delete sessions[from];
+      if (/cancelar/i.test(userMessage)) await clearSession(from);
 
       if (aiResponse.parseFailed) {
         // Claude no devolvió el JSON esperado -- no hay forma de confiar en aiResponse.message
@@ -493,7 +510,7 @@ async function confirmPendingOrder(from, client, pending) {
   const order = pending.existingOrderId
     ? await updateOrderItems(pending.existingOrderId, { items: pending.items, total })
     : await createOrder({ cliente_id: client.id, items: pending.items, total });
-  delete sessions[from];
+  await clearSession(from);
   const accion = pending.existingOrderId ? "actualizado" : "confirmado";
   await sendText(
     from,
@@ -537,8 +554,10 @@ function getQuantitySuggestions(history, productName) {
   return suggestions;
 }
 
-async function askQuantity(from, product, history) {
-  sessions[from] = { ...(sessions[from] || {}), awaitingQuantityFor: product, awaitingQuantityRetries: 0 };
+async function askQuantity(from, product, history, session) {
+  session.awaitingQuantityFor = product;
+  session.awaitingQuantityRetries = 0;
+  await saveSession(from, session);
 
   const suggested = getQuantitySuggestions(history, product.nombre);
   const quantities = suggested.length ? suggested : GENERIC_QUANTITY_FALLBACK;
@@ -553,8 +572,8 @@ async function askQuantity(from, product, history) {
   );
 }
 
-async function addItemToPendingOrder(from, product, qty) {
-  const pending = sessions[from]?.pendingOrder || { items: [] };
+async function addItemToPendingOrder(from, product, qty, session) {
+  const pending = session.pendingOrder || { items: [] };
   const existingItem = pending.items.find((i) => i.nombre === product.nombre);
   if (existingItem) {
     existingItem.cantidad += qty;
@@ -562,7 +581,11 @@ async function addItemToPendingOrder(from, product, qty) {
     pending.items.push({ nombre: product.nombre, cantidad: qty, precio: product.precio });
   }
   pending.total = calcTotal(pending.items);
-  sessions[from] = { pendingOrder: pending };
+
+  // Limpiamos el estado de "esperando cantidad" y guardamos solo el carrito -- igual que
+  // antes, cualquier otro campo transitorio (candidatos de pedido, flags de resolución)
+  // ya cumplió su propósito y no hace falta arrastrarlo.
+  await saveSession(from, { pendingOrder: pending });
 
   const resumen = formatOrderSummary(pending);
   await sendInteractiveButtons(

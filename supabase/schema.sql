@@ -84,3 +84,16 @@ ALTER TABLE clientes
   ADD COLUMN IF NOT EXISTS saldo_inicial  NUMERIC(10,2) DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_clientes_codigo_legacy ON clientes(codigo_legacy);
+
+-- ── Migración 003: estado de conversación persistido ────────────────────────────
+-- Reemplaza el objeto `sessions` en memoria de whatsapp-webhook.js, que se pierde
+-- cada vez que Netlify enruta dos mensajes seguidos a un contenedor distinto
+-- (cold start o invocación concurrente). Una fila por teléfono, se sobrescribe
+-- completa en cada guardado (no hay historial de estados intermedios).
+CREATE TABLE IF NOT EXISTS sesiones (
+  telefono   TEXT PRIMARY KEY,
+  estado     JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE sesiones ENABLE ROW LEVEL SECURITY;
