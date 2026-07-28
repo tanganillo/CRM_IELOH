@@ -88,6 +88,12 @@ A phone number with no `clientes` row is asked (via buttons) whether it's a regi
 
 Once a `clientes` row exists for a phone (whichever path), `getClientByPhone` finds it on every future message, so this question is never asked again for that number. There is no approval UI yet — `estado_aprobacion='pendiente'` rows just sit there until a future CRM feature approves them.
 
+### Reclasificación: cliente particular ya existente pasa a comercio
+
+`handleNewClientFlow` only fires for phones `clientes` has never seen. Existing clients (including anyone created before this feature shipped) reach it via the `soy comercio` text command instead (`startReclasificacion`/`handleReclasificacionCode` in `whatsapp-webhook.js`), surfaced by a hint line appended to `sendMainMenu`'s body — only when `tipo_cliente !== 'comercio'` — so the ~356 already-comercio clients never see it. Session flag `awaitingReclasificacionCode` takes priority over `awaitingQuantityFor` so it can interrupt an order in progress without losing the cart.
+
+On match, `mergeLegacyIntoClient` (`lib/supabase.js`) keeps the real-phone row's `id` (so `pedidos.cliente_id` is never touched), absorbs `direccion`/`zona`/`saldo_inicial` from the legacy row, and deletes the legacy row (safe: its placeholder `imp_NNN` phone means it can never have real orders, so `pedidos.cliente_id`'s `ON DELETE RESTRICT` would loudly block the delete if that assumption were ever wrong). `nombre` is deliberately NOT overwritten — the WhatsApp contact's name is kept over the legacy business name. On no match, same pending-comercio path as `handleNewClientFlow` (new `codigo_legacy` from 900000, admin alert), but as an `UPDATE` since the row already exists.
+
 ### Claude integration (`lib/claude.js`)
 
 `processMessage` injects live catalog and last-3-orders history into the system prompt before every call. The model is always `claude-sonnet-4-6`. The response is expected to be JSON; a regex fallback extracts it if Claude wraps it in prose.

@@ -6,6 +6,7 @@ const {
   upsertClient,
   getClientByCodigoLegacy,
   linkPhoneToClient,
+  mergeLegacyIntoClient,
   nextPendingCodigoLegacy,
   getCatalog,
   getOrdersByClient,
@@ -238,7 +239,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     if (!order) {
       console.warn("Pedido no cancelable o no encontrado:", orderId);
       await sendText(from, "Ese pedido ya no se puede cancelar (puede haber cambiado de estado).");
-      await sendMainMenu(from, name);
+      await sendMainMenu(from, name, client.tipo_cliente);
       return;
     }
     await sendInteractiveButtons(
@@ -258,25 +259,37 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     const order = history.find((o) => String(o.id) === orderId && CANCELABLE_STATES.has(o.estado));
     if (!order) {
       await sendText(from, "Ese pedido ya no se puede cancelar (puede haber cambiado de estado).");
-      await sendMainMenu(from, name);
+      await sendMainMenu(from, name, client.tipo_cliente);
       return;
     }
     await updateOrderStatus(order.id, "cancelado");
     await sendText(from, `❌ *Pedido #${order.id} cancelado.*`);
-    await sendMainMenu(from, name);
+    await sendMainMenu(from, name, client.tipo_cliente);
     return;
   }
 
   // "Mis pedidos" → el usuario decide no cancelar nada
   if (cmd === "mp_salir" || cmd.startsWith("mp_no_")) {
     await sendText(from, "Listo, no cancelamos nada. 👍");
-    await sendMainMenu(from, name);
+    await sendMainMenu(from, name, client.tipo_cliente);
     return;
   }
 
   // "Mis pedidos" → ver el historial completo (incluye entregados y cancelados)
   if (cmd === "mp_historial") {
     await sendOrderHistory(from, history);
+    return;
+  }
+
+  // Reclasificación particular → comercio. Tiene prioridad sobre "esperando cantidad" (un
+  // pedido en curso no se pierde: el pendingOrder de la sesión no se toca acá) porque puede
+  // dispararse en cualquier momento de la conversación.
+  if (session.awaitingReclasificacionCode) {
+    await handleReclasificacionCode(from, name, cmd, client, session);
+    return;
+  }
+  if (cmd === "soy comercio" || cmd === "registrarme como comercio" || cmd === "cambiar a comercio") {
+    await startReclasificacion(from, client, session);
     return;
   }
 
@@ -371,7 +384,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
   if (cmd === "hola" || cmd === "menu" || cmd === "menú" || cmd === "ayuda" || cmd === "menu_principal") {
-    await sendMainMenu(from, name);
+    await sendMainMenu(from, name, client.tipo_cliente);
     return;
   }
   if (cmd === "pedido" || cmd === "3" || cmd === "menu_nuevo_pedido") {
@@ -413,7 +426,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // Un click de botón/lista que no matchea ningún id conocido nunca debe ir a Claude como texto libre
   if (isInteractive) {
     console.warn("Id interactivo no reconocido:", cmd);
-    await sendMainMenu(from, name);
+    await sendMainMenu(from, name, client.tipo_cliente);
     return;
   }
 
@@ -554,6 +567,62 @@ async function handleNewClientFlow(from, name, cmd) {
   );
 }
 
+// ── Reclasificación: cliente particular ya existente pasa a comercio ────────────────
+// A diferencia de handleNewClientFlow (teléfono nunca visto), acá el cliente YA tiene fila
+// propia -- este flujo la actualiza en vez de crear una nueva, y si matchea contra una fila
+// legacy, la absorbe (ver mergeLegacyIntoClient en lib/supabase.js).
+async function startReclasificacion(from, client, session) {
+  if (client.tipo_cliente === "comercio") {
+    if (client.estado_aprobacion === "pendiente") {
+      await sendText(
+        from,
+        `Tu alta como comercio (ID *${client.codigo_legacy}*) ya está en revisión, te avisamos cuando esté aprobada.`
+      );
+    } else {
+      await sendText(from, "Ya estás registrado como comercio ✅");
+    }
+    return;
+  }
+  await saveSession(from, { ...session, awaitingReclasificacionCode: true });
+  await sendText(from, "Decime tu ID de cliente (el código que te dieron al darte de alta como comercio):");
+}
+
+async function handleReclasificacionCode(from, name, cmd, client, session) {
+  const codigo = parseInt(cmd, 10);
+  if (!Number.isFinite(codigo) || String(codigo) !== cmd) {
+    await sendText(from, "Ese código no parece válido. Escribilo solo con números, por ejemplo: 123");
+    return;
+  }
+
+  const { awaitingReclasificacionCode, ...restSession } = session;
+
+  const existing = await getClientByCodigoLegacy(codigo);
+  if (existing) {
+    await mergeLegacyIntoClient(client.id, existing);
+    await saveSession(from, restSession);
+    await sendText(
+      from,
+      `¡Listo! Vinculamos tu cuenta a *${existing.nombre}* como comercio. Ya podés pedir con precios de comercio.`
+    );
+    return;
+  }
+
+  const nuevoCodigo = await nextPendingCodigoLegacy();
+  await upsertClient({
+    telefono: from,
+    nombre: name,
+    tipo_cliente: "comercio",
+    estado_aprobacion: "pendiente",
+    codigo_legacy: nuevoCodigo,
+  });
+  await saveSession(from, restSession);
+  await notifyAdminNewComercio({ telefono: from, nombre: name, codigo_legacy: nuevoCodigo });
+  await sendText(
+    from,
+    `Recibimos tu solicitud como comercio (ID *${nuevoCodigo}*), la estamos revisando 🕐\n\nMientras tanto seguís pidiendo con precios de particular.`
+  );
+}
+
 // Avisa al admin por WhatsApp de un comercio nuevo pendiente de aprobación manual desde el
 // CRM. ADMIN_WHATSAPP_NUMBER todavía no está seteada en ningún ambiente -- si falta, se
 // loguea un warning y se sigue el flujo normal (no debe romper el alta del cliente).
@@ -591,13 +660,24 @@ function looksLikeCatalogRecitation(message, catalog) {
 
 const IS_SANDBOX = process.env.WHATSAPP_PHONE_NUMBER_ID === "1074563209079744";
 
-async function sendMainMenu(to, name) {
+// El hint de reclasificación viaja como texto agregado al mismo mensaje del menú (no como
+// botón/fila aparte) para no tocar la estructura de los 3 botones que ya funciona -- y solo
+// se muestra a quien todavía no es comercio, para no ensuciarle el menú a los ~356 que ya lo son.
+function withComercioHint(body, tipoCliente) {
+  if (tipoCliente === "comercio") return body;
+  return `${body}\n\n¿Tenés un comercio? Escribí *soy comercio* para vincularlo a tu cuenta.`;
+}
+
+async function sendMainMenu(to, name, tipoCliente) {
   if (IS_SANDBOX) {
-    await sendText(to, `¡Hola ${name}! ¿Qué necesitás?\n\n1. Catálogo\n2. Mis pedidos\n3. Hacer pedido`);
+    await sendText(
+      to,
+      withComercioHint(`¡Hola ${name}! ¿Qué necesitás?\n\n1. Catálogo\n2. Mis pedidos\n3. Hacer pedido`, tipoCliente)
+    );
   } else {
     await sendInteractiveButtons(
       to,
-      `¡Hola ${name}! ¿Qué necesitás?`,
+      withComercioHint(`¡Hola ${name}! ¿Qué necesitás?`, tipoCliente),
       [
         { id: "menu_catalogo", title: "📋 Catálogo" },
         { id: "menu_pedidos", title: "📦 Mis pedidos" },
