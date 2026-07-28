@@ -547,10 +547,22 @@ const GENERIC_QUANTITY_FALLBACK = [2, 5];
 // Busca, en el historial ya cargado del cliente (más reciente primero), las cantidades
 // distintas que pidió de este mismo producto — sin repetir valores ya vistos. No hace
 // falta una query nueva a Supabase: history ya trae los pedidos con sus items JSONB.
-function getQuantitySuggestions(history, productName) {
+//
+// pedidos.items[].cantidad guarda el TOTAL acumulado de ese producto dentro de todo el
+// pedido, no la cantidad "atómica" que se tipeó en cada agregada individual (ver
+// addItemToPendingOrder: cuando el mismo producto se agrega dos veces a un pedido, se
+// suma sobre el item existente antes de guardar). Supabase nunca guarda ese detalle
+// intermedio, así que no hay forma de recuperar "lo que tipeó cada vez" una vez
+// persistido -- solo el total final por pedido.
+// excludeOrderId evita el caso circular: si el cliente está sumando productos a un pedido
+// que ya tenía sin entregar (existingOrderId), ese mismo pedido todavía figura en
+// `history` con su estado previo a esta sesión, y su total acumulado no es una sugerencia
+// útil (es el propio pedido en curso, no una referencia histórica independiente).
+function getQuantitySuggestions(history, productName, excludeOrderId) {
   const seen = new Set();
   const suggestions = [];
   for (const order of history) {
+    if (excludeOrderId && order.id === excludeOrderId) continue;
     for (const item of order.items || []) {
       if (item.nombre !== productName || seen.has(item.cantidad)) continue;
       seen.add(item.cantidad);
@@ -566,7 +578,7 @@ async function askQuantity(from, product, history, session) {
   session.awaitingQuantityRetries = 0;
   await saveSession(from, session);
 
-  const suggested = getQuantitySuggestions(history, product.nombre);
+  const suggested = getQuantitySuggestions(history, product.nombre, session.pendingOrder?.existingOrderId);
   const quantities = suggested.length ? suggested : GENERIC_QUANTITY_FALLBACK;
 
   await sendInteractiveButtons(
