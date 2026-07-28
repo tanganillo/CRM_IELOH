@@ -405,8 +405,8 @@ async function startOrderFlow(from, client, catalog, history) {
     from,
     `Tenés un pedido *#${existing.id}* sin entregar todavía:\n\n${formatOrderSummary(existing)}\n\nTotal: $${existing.total}\n\n¿Sumamos productos a ese pedido o hacemos uno nuevo por separado?`,
     [
-      { id: `usar_pedido_${existing.id}`, title: "➕ Sumar a ese pedido" },
-      { id: "pedido_nuevo", title: "🆕 Pedido nuevo aparte" },
+      { id: `usar_pedido_${existing.id}`, title: "➕ Sumar al pedido" },
+      { id: "pedido_nuevo", title: "🆕 Pedido nuevo" },
     ]
   );
 }
