@@ -37,14 +37,19 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: "Bad Request" };
   }
 
+  const rawMessage = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  console.log("Mensaje entrante (raw):", JSON.stringify(rawMessage));
+
   const incoming = parseIncoming(body);
+  console.log("Mensaje entrante (parseado):", JSON.stringify(incoming));
   if (!incoming) return { statusCode: 200, body: "ok" }; // ignorar notificaciones vacías
 
-  const { from, name, text, interactiveId } = incoming;
+  const { from, name, text, interactiveId, type } = incoming;
+  const isInteractive = type === "interactive" || type === "button";
   const userMessage = interactiveId || text;
 
   try {
-    await handleMessage(from, name, userMessage);
+    await handleMessage(from, name, userMessage, isInteractive);
   } catch (err) {
     console.error("Error manejando mensaje:", err);
     console.error('Meta error details:', JSON.stringify(err.response?.data, null, 2));
@@ -57,7 +62,7 @@ exports.handler = async (event) => {
 
 // ── Lógica principal de conversación ─────────────────────────────────────────
 
-async function handleMessage(from, name, userMessage) {
+async function handleMessage(from, name, userMessage, isInteractive) {
   // Registrar / recuperar cliente
   let client = await getClientByPhone(from);
   if (!client) {
@@ -74,17 +79,42 @@ async function handleMessage(from, name, userMessage) {
     getOrdersByClient(client.id),
   ]);
 
-  // Comandos rápidos sin IA para reducir latencia
+  // Comandos rápidos sin IA para reducir latencia (texto libre o ids de botones/listas)
   const cmd = userMessage.toLowerCase().trim();
-  if (cmd === "catalogo" || cmd === "catálogo" || cmd === "1") {
+  if (cmd === "catalogo" || cmd === "catálogo" || cmd === "1" || cmd === "menu_catalogo") {
     await sendCatalog(from, catalog);
     return;
   }
-  if (cmd === "estado" || cmd === "mis pedidos" || cmd === "2") {
+  if (cmd === "estado" || cmd === "mis pedidos" || cmd === "2" || cmd === "menu_pedidos") {
     await sendOrderStatus(from, history);
     return;
   }
   if (cmd === "hola" || cmd === "menu" || cmd === "menú" || cmd === "ayuda") {
+    await sendMainMenu(from, name);
+    return;
+  }
+  if (cmd === "pedido" || cmd === "3" || cmd === "menu_nuevo_pedido") {
+    await sendText(from, "Contame qué querés pedir, por ejemplo: *2 bolsas de hielo en cubo de 5kg*.");
+    return;
+  }
+  if (cmd === "confirmar_pedido") {
+    const session = sessions[from] || {};
+    await confirmPendingOrder(from, client, session.pendingOrder);
+    return;
+  }
+  if (cmd === "cancelar_pedido") {
+    delete sessions[from];
+    await sendText(from, "Pedido cancelado. Escribí *catálogo* para ver los productos o contame qué necesitás.");
+    return;
+  }
+  if (cmd === "modificar_pedido") {
+    await sendText(from, "Contame qué cambios querés hacer en tu pedido.");
+    return;
+  }
+
+  // Un click de botón/lista que no matchea ningún id conocido nunca debe ir a Claude como texto libre
+  if (isInteractive) {
+    console.warn("Id interactivo no reconocido:", cmd);
     await sendMainMenu(from, name);
     return;
   }
@@ -109,31 +139,20 @@ async function handleMessage(from, name, userMessage) {
         await sendInteractiveButtons(
           from,
           `${aiResponse.message}\n\n${resumen}`,
-          ["✅ Confirmar pedido", "✏️ Modificar", "❌ Cancelar"]
+          [
+            { id: "confirmar_pedido", title: "✅ Confirmar pedido" },
+            { id: "modificar_pedido", title: "✏️ Modificar" },
+            { id: "cancelar_pedido", title: "❌ Cancelar" },
+          ]
         );
       } else {
         await sendText(from, aiResponse.message);
       }
       break;
 
-    case "confirmacion_pedido": {
-      const pending = session.pendingOrder || aiResponse.order;
-      if (!pending?.items?.length) {
-        await sendText(from, "No hay pedido pendiente. ¿Querés hacer uno nuevo?");
-        break;
-      }
-      const order = await createOrder({
-        cliente_id: client.id,
-        items: pending.items,
-        total: pending.total || calcTotal(pending.items),
-      });
-      delete sessions[from];
-      await sendText(
-        from,
-        `✅ *Pedido #${order.id} confirmado*\n\n${formatOrderSummary(pending)}\n\nTotal: $${order.total}\n\nTe avisamos cuando salga. ¡Gracias por elegirnos!`
-      );
+    case "confirmacion_pedido":
+      await confirmPendingOrder(from, client, session.pendingOrder || aiResponse.order);
       break;
-    }
 
     default:
       // Cancelar pedido pendiente si el usuario lo indica
@@ -153,9 +172,30 @@ async function sendMainMenu(to, name) {
     await sendInteractiveButtons(
       to,
       `¡Hola ${name}! ¿Qué necesitás?`,
-      ["📋 Catálogo", "📦 Mis pedidos", "🛒 Hacer pedido"]
+      [
+        { id: "menu_catalogo", title: "📋 Catálogo" },
+        { id: "menu_pedidos", title: "📦 Mis pedidos" },
+        { id: "menu_nuevo_pedido", title: "🛒 Hacer pedido" },
+      ]
     );
   }
+}
+
+async function confirmPendingOrder(from, client, pending) {
+  if (!pending?.items?.length) {
+    await sendText(from, "No hay pedido pendiente. ¿Querés hacer uno nuevo?");
+    return;
+  }
+  const order = await createOrder({
+    cliente_id: client.id,
+    items: pending.items,
+    total: pending.total || calcTotal(pending.items),
+  });
+  delete sessions[from];
+  await sendText(
+    from,
+    `✅ *Pedido #${order.id} confirmado*\n\n${formatOrderSummary(pending)}\n\nTotal: $${order.total}\n\nTe avisamos cuando salga. ¡Gracias por elegirnos!`
+  );
 }
 
 async function sendCatalog(to, catalog) {
