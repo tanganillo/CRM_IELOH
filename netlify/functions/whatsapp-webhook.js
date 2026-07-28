@@ -411,6 +411,12 @@ async function startOrderFlow(from, client, catalog, history) {
   );
 }
 
+// WhatsApp corta (o rechaza) las filas de listas interactivas con título de más de 24 caracteres
+function truncateTitle(text, maxLen = 24) {
+  if (!text || text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 3)}...`;
+}
+
 async function sendCatalog(to, catalog) {
   if (!catalog.length) {
     await sendText(to, "Por ahora no hay productos disponibles. Volvé a consultar más tarde.");
@@ -421,7 +427,7 @@ async function sendCatalog(to, catalog) {
       title: "Productos",
       rows: catalog.map((p) => ({
         id: `cat_${p.id}`,
-        title: p.nombre,
+        title: truncateTitle(p.nombre),
         description: `$${p.precio} · ${p.descripcion}`,
       })),
     },
