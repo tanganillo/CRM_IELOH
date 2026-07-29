@@ -373,14 +373,17 @@ document.querySelectorAll(".nav-btn").forEach(btn => {
 let _clientsPage = 0;
 const CLIENTS_PER_PAGE = 100;
 
+let _clientsCache = []; // último page cargado, para poder abrir el modal de edición por id sin re-pedirlo
+
 async function loadClients(page) {
   if (page !== undefined) _clientsPage = page;
   const offset  = _clientsPage * CLIENTS_PER_PAGE;
   const clients = await API.get(`/api/clients?limit=${CLIENTS_PER_PAGE}&offset=${offset}`);
+  _clientsCache = clients || [];
 
   const tbody = document.getElementById("clientsBody");
   if (!clients?.length && _clientsPage === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="loading">Sin clientes</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="loading">Sin clientes</td></tr>`;
     renderClientsPagination(false);
     return;
   }
@@ -391,6 +394,8 @@ async function loadClients(page) {
       <td>${c.telefono}</td>
       <td>${c.direccion || "—"}</td>
       <td>${new Date(c.created_at).toLocaleDateString("es-AR")}</td>
+      <td><span class="badge ${c.tipo_cliente === "comercio" ? "badge--confirmado" : "badge--pendiente"}">${c.tipo_cliente === "comercio" ? "Comercio" : "Particular"}</span></td>
+      <td><button class="btn btn--outline btn--sm" onclick="openClientModal(${c.id})">Editar</button></td>
     </tr>`).join("");
 
   renderClientsPagination(clients.length === CLIENTS_PER_PAGE);
@@ -404,6 +409,62 @@ function renderClientsPagination(hasMore) {
 
 document.getElementById("btnClientsPrev").addEventListener("click", () => loadClients(_clientsPage - 1));
 document.getElementById("btnClientsNext").addEventListener("click", () => loadClients(_clientsPage + 1));
+
+/* ── Agregar/editar cliente modal ────────────────────────────────────────── */
+let _currentClientId = null; // null = alta nueva, id = edición
+
+function fillClientForm({ nombre = "", telefono = "", direccion = "", zona = "", tipo_cliente = "particular" } = {}) {
+  document.getElementById("cNombre").value      = nombre;
+  document.getElementById("cTelefono").value    = telefono;
+  document.getElementById("cDireccion").value   = direccion || "";
+  document.getElementById("cZona").value        = zona || "";
+  document.getElementById("cTipoCliente").value = tipo_cliente || "particular";
+}
+
+function openClientModal(id) {
+  const client = id != null ? _clientsCache.find(c => c.id === id) : null;
+  _currentClientId = client?.id ?? null;
+  document.getElementById("clientModalTitle").textContent = client ? `Editar cliente #${client.id}` : "Nuevo cliente";
+  fillClientForm(client);
+  document.getElementById("clientModal").classList.remove("hidden");
+}
+
+window.openClientModal = openClientModal;
+
+document.getElementById("btnAddClient").addEventListener("click", () => openClientModal(null));
+
+document.getElementById("btnClientCancel").addEventListener("click", () => {
+  document.getElementById("clientModal").classList.add("hidden");
+});
+
+document.getElementById("btnClientSave").addEventListener("click", async () => {
+  const nombre      = document.getElementById("cNombre").value.trim();
+  const telefono    = document.getElementById("cTelefono").value.trim();
+  const direccion   = document.getElementById("cDireccion").value.trim();
+  const zona        = document.getElementById("cZona").value.trim();
+  const tipo_cliente = document.getElementById("cTipoCliente").value;
+
+  if (!nombre || !telefono) {
+    toast("Nombre y teléfono son requeridos", "err");
+    return;
+  }
+
+  const payload = { nombre, telefono, direccion: direccion || null, zona: zona || null, tipo_cliente };
+
+  try {
+    if (_currentClientId != null) {
+      await API.patch("/api/clients", { id: _currentClientId, ...payload });
+      toast(`Cliente #${_currentClientId} actualizado`);
+    } else {
+      await API.post("/api/clients", payload);
+      toast(`Cliente ${nombre} agregado`);
+    }
+    document.getElementById("clientModal").classList.add("hidden");
+    loadClients();
+  } catch (err) {
+    toast("Error al guardar: " + err.message, "err");
+  }
+});
 
 /* ── Catalog ─────────────────────────────────────────────────────────────── */
 async function loadCatalog() {

@@ -146,13 +146,16 @@
 
       <!-- ── CLIENTES ── -->
       <section id="tab-clients" class="tab">
-        <h2 class="section-title">Clientes</h2>
+        <div class="toolbar">
+          <h2 class="section-title">Clientes</h2>
+          <button id="btnAddClient" class="btn btn--primary btn--sm">+ Agregar cliente</button>
+        </div>
         <div class="table-wrap">
           <table class="table">
             <thead>
-              <tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Registrado</th></tr>
+              <tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Registrado</th><th>Tipo</th><th>Acción</th></tr>
             </thead>
-            <tbody id="clientsBody"><tr><td colspan="5" class="loading">Cargando…</td></tr></tbody>
+            <tbody id="clientsBody"><tr><td colspan="7" class="loading">Cargando…</td></tr></tbody>
           </table>
         </div>
         <div class="pagination">
@@ -203,6 +206,27 @@
         <div class="modal__actions">
           <button id="btnProdCancel" class="btn btn--outline">Cancelar</button>
           <button id="btnProdSave" class="btn btn--primary">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal agregar/editar cliente -->
+    <div id="clientModal" class="modal hidden">
+      <div class="modal__box">
+        <h3 id="clientModalTitle">Nuevo cliente</h3>
+        <label>Nombre <input id="cNombre" class="input" type="text" /></label>
+        <label>Teléfono <input id="cTelefono" class="input" type="tel" placeholder="Ej: 5492994000000" /></label>
+        <label>Dirección <input id="cDireccion" class="input" type="text" /></label>
+        <label>Zona de entrega <input id="cZona" class="input" type="text" placeholder="Ej: ZONA 1" /></label>
+        <label>Tipo
+          <select id="cTipoCliente" class="input">
+            <option value="particular">Particular</option>
+            <option value="comercio">Comercio</option>
+          </select>
+        </label>
+        <div class="modal__actions">
+          <button id="btnClientCancel" class="btn btn--outline">Cancelar</button>
+          <button id="btnClientSave" class="btn btn--primary">Guardar</button>
         </div>
       </div>
     </div>
