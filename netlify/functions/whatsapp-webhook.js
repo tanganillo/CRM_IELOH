@@ -235,21 +235,12 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // "Mis pedidos" → el usuario eligió un pedido para cancelar: pedir confirmación explícita
   if (cmd.startsWith("mp_cancelar_")) {
     const orderId = cmd.slice("mp_cancelar_".length);
-    const order = history.find((o) => String(o.id) === orderId && CANCELABLE_STATES.has(o.estado));
+    const order = await offerCancelConfirmation(from, orderId, history);
     if (!order) {
       console.warn("Pedido no cancelable o no encontrado:", orderId);
       await sendText(from, "Ese pedido ya no se puede cancelar (puede haber cambiado de estado).");
       await sendMainMenu(from, name, client.tipo_cliente);
-      return;
     }
-    await sendInteractiveButtons(
-      from,
-      `¿Confirmás cancelar el pedido *#${order.id}* por $${order.total}?`,
-      [
-        { id: `mp_confirmar_${order.id}`, title: "✅ Sí, cancelar" },
-        { id: `mp_no_${order.id}`, title: "❌ No, dejarlo" },
-      ]
-    );
     return;
   }
 
@@ -278,6 +269,15 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // "Mis pedidos" → ver el historial completo (incluye entregados y cancelados)
   if (cmd === "mp_historial") {
     await sendOrderHistory(from, history);
+    return;
+  }
+
+  // "Mis pedidos" → esperando que el cliente diga, en texto libre, cuál pedido cancelar
+  // (mostrado por sendOrderStatus con al menos un pedido cancelable). Misma prioridad que
+  // awaitingReclasificacionCode: se resuelve antes que cualquier otra cosa, así "el 1" no
+  // termina cayendo en Claude en vez de mapear a un pedido real.
+  if (session.awaitingCancelSelection) {
+    await handleCancelSelectionText(from, name, cmd, client, history, session);
     return;
   }
 
@@ -380,7 +380,8 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     cmd === "menu_pedidos" ||
     (!isInteractive && ORDER_DETAIL_RE.test(cmd))
   ) {
-    await sendOrderStatus(from, history);
+    const hasCancelable = await sendOrderStatus(from, history);
+    if (hasCancelable) await saveSession(from, { ...session, awaitingCancelSelection: true });
     return;
   }
   if (cmd === "hola" || cmd === "menu" || cmd === "menú" || cmd === "ayuda" || cmd === "menu_principal") {
@@ -438,9 +439,11 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
       await sendCatalog(from, catalog);
       break;
 
-    case "consultar_estado":
-      await sendOrderStatus(from, history);
+    case "consultar_estado": {
+      const hasCancelable = await sendOrderStatus(from, history);
+      if (hasCancelable) await saveSession(from, { ...session, awaitingCancelSelection: true });
       break;
+    }
 
     case "nuevo_pedido": {
       const nextSession = { pendingOrder: aiResponse.order };
@@ -565,6 +568,51 @@ async function handleNewClientFlow(from, name, cmd) {
     `¡Hola ${name}! Soy el bot de *ieloh* 🧊\n\n¿Sos cliente registrado (comercio) o particular?`,
     CLIENT_TYPE_BUTTONS
   );
+}
+
+// ── Cancelación de pedidos: selección por tap (lista) o por texto libre ─────────────
+// Busca el pedido por id entre los cancelables y, si lo encuentra, manda los botones de
+// confirmación. Usado tanto desde el tap en la lista (mp_cancelar_<id>) como desde texto
+// libre ("el 1", "cancelar pedido 1", ver handleCancelSelectionText). Devuelve el pedido
+// encontrado, o null si no existe o ya no es cancelable -- el caller decide qué mensaje
+// mostrar en ese caso, porque varía según de dónde vino (el bloque mp_cancelar_ además
+// loguea un warn con detalle propio).
+async function offerCancelConfirmation(from, orderId, history) {
+  const order = history.find((o) => String(o.id) === String(orderId) && CANCELABLE_STATES.has(o.estado));
+  if (!order) return null;
+
+  await sendInteractiveButtons(
+    from,
+    `¿Confirmás cancelar el pedido *#${order.id}* por $${order.total}?`,
+    [
+      { id: `mp_confirmar_${order.id}`, title: "✅ Sí, cancelar" },
+      { id: `mp_no_${order.id}`, title: "❌ No, dejarlo" },
+    ]
+  );
+  return order;
+}
+
+// session.awaitingCancelSelection quedó en true porque sendOrderStatus mostró al menos un
+// pedido cancelable; acá se interpreta la respuesta en texto libre ("el 1", "cancelar el
+// pedido 1", "1") como el número de ese pedido -- toma el primer grupo de dígitos que
+// aparezca. Si no hay ningún dígito, no se limpia el flag (mismo criterio que
+// handleReclasificacionCode con un código inválido): se vuelve a intentar en el próximo mensaje
+// en vez de soltarlo silenciosamente al flujo normal.
+async function handleCancelSelectionText(from, name, cmd, client, history, session) {
+  const match = cmd.match(/\d+/);
+  if (!match) {
+    await sendText(from, "No entendí cuál pedido. Decime el número, por ejemplo: 1");
+    return;
+  }
+
+  const { awaitingCancelSelection, ...restSession } = session;
+  await saveSession(from, restSession);
+
+  const order = await offerCancelConfirmation(from, match[0], history);
+  if (!order) {
+    await sendText(from, "Ese pedido ya no se puede cancelar (puede haber cambiado de estado).");
+    await sendMainMenu(from, name, client.tipo_cliente);
+  }
 }
 
 // ── Reclasificación: cliente particular ya existente pasa a comercio ────────────────
@@ -865,6 +913,9 @@ function formatOrderLine(o) {
 
 // Vista por defecto de "Mis pedidos": solo los activos (sin entregar), con opción de
 // cancelar y de saltar al historial completo si hace falta ver entregados/cancelados.
+// Devuelve true si mostró al menos un pedido cancelable (el caller usa esto para saber si
+// tiene que dejar la sesión esperando una selección en texto libre -- ver
+// session.awaitingCancelSelection en handleMessage).
 async function sendOrderStatus(to, orders) {
   const active = orders.filter((o) => UNDELIVERED_STATES.has(o.estado)).slice(0, 5);
 
@@ -876,7 +927,7 @@ async function sendOrderStatus(to, orders) {
         { id: "menu_principal", title: "🏠 Menú principal" },
       ]);
     }
-    return;
+    return false;
   }
 
   // Detalle completo (encabezado + items) de cada pedido activo. Los activos son pocos por
@@ -911,6 +962,7 @@ async function sendOrderStatus(to, orders) {
     },
   ];
   await sendInteractiveList(to, "¿Querés cancelar algún pedido o ver más?", "Elegir opción", sections);
+  return cancelable.length > 0;
 }
 
 // "Ver historial completo": los últimos pedidos sin filtrar por estado, solo informativo.
