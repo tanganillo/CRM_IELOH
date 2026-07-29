@@ -232,8 +232,17 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
     return;
   }
 
+  // A partir de acá, cualquier salida del sub-flujo "elegir qué pedido cancelar" (tap
+  // directo en la lista, confirmar, rechazar, o irse al historial) tiene que soltar
+  // awaitingCancelSelection -- si no, la próxima vez que el cliente escriba algo que no
+  // matchee ninguno de estos ids (ej. "hola" tiempo después) esa respuesta se sigue
+  // interpretando como "cuál pedido" en vez de pasar al flujo normal (ver el chequeo de
+  // session.awaitingCancelSelection más abajo, y handleCancelSelectionText).
+  const { awaitingCancelSelection: _unusedAwaitingCancel, ...sessionSinCancelSelection } = session;
+
   // "Mis pedidos" → el usuario eligió un pedido para cancelar: pedir confirmación explícita
   if (cmd.startsWith("mp_cancelar_")) {
+    await saveSession(from, sessionSinCancelSelection);
     const orderId = cmd.slice("mp_cancelar_".length);
     const order = await offerCancelConfirmation(from, orderId, history);
     if (!order) {
@@ -246,6 +255,7 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
 
   // "Mis pedidos" → confirmación explícita de la cancelación
   if (cmd.startsWith("mp_confirmar_")) {
+    await saveSession(from, sessionSinCancelSelection);
     const orderId = cmd.slice("mp_confirmar_".length);
     const order = history.find((o) => String(o.id) === orderId && CANCELABLE_STATES.has(o.estado));
     if (!order) {
@@ -261,13 +271,17 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
 
   // "Mis pedidos" → el usuario decide no cancelar nada
   if (cmd === "mp_salir" || cmd.startsWith("mp_no_")) {
+    await saveSession(from, sessionSinCancelSelection);
     await sendText(from, "Listo, no cancelamos nada. 👍");
     await sendMainMenu(from, name, client.tipo_cliente);
     return;
   }
 
-  // "Mis pedidos" → ver el historial completo (incluye entregados y cancelados)
+  // "Mis pedidos" → ver el historial completo (incluye entregados y cancelados). No llama
+  // sendMainMenu, pero igual hay que soltar el flag acá: también es una salida válida del
+  // mismo sub-flujo (mismo id de lista que "Cancelar #N"/"No cancelar nada").
   if (cmd === "mp_historial") {
+    await saveSession(from, sessionSinCancelSelection);
     await sendOrderHistory(from, history);
     return;
   }
