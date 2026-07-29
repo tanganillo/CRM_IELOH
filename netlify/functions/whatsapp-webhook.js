@@ -290,9 +290,28 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // (mostrado por sendOrderStatus con al menos un pedido cancelable). Misma prioridad que
   // awaitingReclasificacionCode: se resuelve antes que cualquier otra cosa, así "el 1" no
   // termina cayendo en Claude en vez de mapear a un pedido real.
+  // Vía de escape para no dejar al cliente sin salida si awaitingCancelSelection quedara
+  // pegado (ya sea por un bug o por retomar la conversación mucho después): mismo criterio
+  // que ESCAPE_CMDS más abajo para awaitingQuantityFor. "1"/"2"/"3" quedan afuera a propósito
+  // porque acá casi siempre van a ser el número de pedido que se está pidiendo.
+  const ESCAPE_CMDS = new Set([
+    "catalogo", "catálogo", "menu_catalogo",
+    "estado", "mis pedidos", "menu_pedidos",
+    "hola", "menu", "menú", "ayuda", "menu_principal",
+    "pedido", "menu_nuevo_pedido",
+    "confirmar_pedido", "cancelar_pedido", "modificar_pedido", "agregar_otro",
+  ]);
+
   if (session.awaitingCancelSelection) {
-    await handleCancelSelectionText(from, name, cmd, client, history, session);
-    return;
+    if (ESCAPE_CMDS.has(cmd)) {
+      delete session.awaitingCancelSelection;
+      await saveSession(from, session);
+      // sin return: sigue de largo y este mismo mensaje se procesa normal más abajo
+      // (catálogo, menú, etc.) en vez de perderse.
+    } else {
+      await handleCancelSelectionText(from, name, cmd, client, history, session);
+      return;
+    }
   }
 
   // Reclasificación particular → comercio. Tiene prioridad sobre "esperando cantidad" (un
@@ -310,13 +329,6 @@ async function handleMessage(from, name, userMessage, isInteractive, interactive
   // Respuesta de cantidad para un producto elegido en el paso anterior.
   // "1"/"2"/"3" quedan afuera del escape porque ahí casi siempre significan cantidad,
   // no el atajo numérico del menú de sandbox.
-  const ESCAPE_CMDS = new Set([
-    "catalogo", "catálogo", "menu_catalogo",
-    "estado", "mis pedidos", "menu_pedidos",
-    "hola", "menu", "menú", "ayuda", "menu_principal",
-    "pedido", "menu_nuevo_pedido",
-    "confirmar_pedido", "cancelar_pedido", "modificar_pedido", "agregar_otro",
-  ]);
   // El \b final se reemplaza por un lookahead: en JS \b no reconoce vocales acentuadas
   // como caracteres de palabra, así que "dejaló"/"olvídalo" no matcheaban con \b al final.
   const CANCEL_INTENT_RE = /\b(cancelar|no\s+quiero|ning[uú]no|dejal[oó]|olv[ií]dalo)(?![a-záéíóúñ])/;
